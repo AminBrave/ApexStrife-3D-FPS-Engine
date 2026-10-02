@@ -92,7 +92,6 @@ const HEAD_RADIUS = 0.23;
 const BODY_RADIUS = 0.44;
 const BOT_SENSE_RANGE = 55;
 const BOT_FIRE_RANGE = 52;
-const BOT_SHOT_INTERVAL = 0.22;
 
 export class GameServer {
   private wss: WebSocketServer | null = null;
@@ -594,7 +593,9 @@ export class GameServer {
         bot.yaw = Math.atan2(toTarget.x, -toTarget.z);
         bot.pitch = Math.atan2(-toTarget.y, Math.hypot(toTarget.x, toTarget.z));
         bot.isFiring = distance <= BOT_FIRE_RANGE && this.botHasLineOfSight(bot, target);
-        if (bot.isFiring && now - bot.lastShotAt >= BOT_SHOT_INTERVAL * 1000) {
+        const botWeapon = WEAPONS[weaponIdFromIndex(bot.weaponIndex)];
+        const fireInterval = 60000 / botWeapon.fireRate;
+        if (bot.isFiring && now - bot.lastShotAt >= fireInterval * 0.95) {
           this.botFire(bot, target, now);
         }
       } else {
@@ -645,7 +646,7 @@ export class GameServer {
       const dy = player.state.position[1] - bot.position[1];
       const dz = player.state.position[2] - bot.position[2];
       const distance = Math.hypot(dx, dy, dz);
-      if (distance < bestDistance && this.botHasLineOfSight(bot, player)) {
+      if (distance < bestDistance) {
         best = player;
         bestDistance = distance;
       }
