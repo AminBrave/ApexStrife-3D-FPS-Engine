@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { stepHorizontalVelocity } from '../src/gameplay/MovementSimulation';
 import { ARENA_BOXES, ARENA_SPAWNS, ARENA_FLOOR_TOP } from '../src/world/ArenaDefinition';
 import { WEAPONS, deterministicSpread } from '../src/gameplay/WeaponDefinitions';
+import { SURFACE_MATERIALS } from '../src/world/SurfaceMaterial';
 
 function state(grounded = true) {
   return { velocity: [0, 0, 0] as [number, number, number], isGrounded: grounded };
@@ -45,3 +46,11 @@ for (const weapon of Object.values(WEAPONS)) {
   assert(weapon.spreadRadians >= 0 && weapon.spreadRadians < 0.2, 'weapon spread must remain within gameplay bounds');
 }
 console.log('Authoritative weapon tests passed.');
+
+for (const box of ARENA_BOXES) {
+  assert(SURFACE_MATERIALS[box.material], `surface material must exist for ${box.type}`);
+}
+assert(ARENA_BOXES.some(box => box.type === 'building_wall'), 'town buildings must exist');
+assert(ARENA_BOXES.some(box => box.type === 'dumpster'), 'town street props must exist');
+assert(ARENA_BOXES.some(box => box.type === 'streetlight'), 'town streetlights must exist');
+console.log('Arena material/town tests passed.');
