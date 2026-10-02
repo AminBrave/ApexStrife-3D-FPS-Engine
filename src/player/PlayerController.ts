@@ -88,7 +88,7 @@ export class PlayerController {
 
     // Weapon hits are presentation feedback only. Damage is decided by the server.
     eventBus.on('weapon:shot', ({ weaponId, origin, directions }) => {
-      this.networkManager.sendShot(weaponId as any, origin, directions);
+      this.networkManager.sendShot(weaponId as any, origin, directions, this.camera.yaw, this.camera.pitch);
     });
 
     eventBus.on('weapon:reload:start', ({ weaponId }) => {
