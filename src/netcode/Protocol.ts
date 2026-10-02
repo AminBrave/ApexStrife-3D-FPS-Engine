@@ -7,6 +7,8 @@ export interface ShotCommand {
   weaponId: WeaponId;
   origin: [number, number, number];
   directions: [number, number, number][];
+  aimYaw: number;
+  aimPitch: number;
   clientTime: number;
 }
 
@@ -44,6 +46,10 @@ export interface ServerSnapshotPayload {
   authoritativeState: PlayerState;
   health: number;
   maxHealth: number;
+  weaponId: WeaponId;
+  ammoInMag: Record<WeaponId, number>;
+  ammoInReserve: Record<WeaponId, number>;
+  reloadUntil: number;
   entities: EntitySnapshot[];
 }
 
