@@ -46,6 +46,8 @@ export interface ServerSnapshotPayload {
   authoritativeState: PlayerState;
   health: number;
   maxHealth: number;
+  shield: number;
+  maxShield: number;
   weaponId: WeaponId;
   ammoInMag: Record<WeaponId, number>;
   ammoInReserve: Record<WeaponId, number>;
