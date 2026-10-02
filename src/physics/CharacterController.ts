@@ -103,9 +103,14 @@ export class CharacterController {
     this.velocity.x = movementState.velocity[0];
     this.velocity.z = movementState.velocity[2];
 
-    if (this.isGrounded && this.velocity.y < 0) {
-      this.velocity.y = -0.5;
+    if (this.isGrounded) {
+      this.coyoteTimer = this.coyoteTimeLimit;
+      if (this.velocity.y < 0) this.velocity.y = -0.5;
+    } else {
+      this.coyoteTimer = Math.max(0, this.coyoteTimer - fixedDeltaTime);
+      this.velocity.y = Math.max(-45, this.velocity.y + this.gravity * fixedDeltaTime);
     }
+
     // 6. Jumping
     if (this.jumpCooldown > 0) {
       this.jumpCooldown -= fixedDeltaTime;
