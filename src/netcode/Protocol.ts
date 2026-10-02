@@ -26,7 +26,7 @@ export interface AuthoritativeCombatEvent {
 }
 
 export interface NetMessage<T = unknown> {
-  type: 'join' | 'welcome' | 'input' | 'shot' | 'reload' | 'snapshot' | 'combat' | 'ping' | 'pong' | 'player_join' | 'player_leave';
+  type: 'join' | 'welcome' | 'input' | 'shot' | 'reload' | 'snapshot' | 'combat' | 'kill' | 'ping' | 'pong' | 'player_join' | 'player_leave';
   data: T;
 }
 
