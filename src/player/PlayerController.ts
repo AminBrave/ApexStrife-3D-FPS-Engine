@@ -93,6 +93,8 @@ export class PlayerController {
 
       if (event.event === 'damage' && event.damage) {
         this.takeDamage(event.damage, event.shooterId);
+      } else if (event.event === 'respawn') {
+        this.respawn();
       }
     });
 
@@ -289,10 +291,10 @@ export class PlayerController {
       this.deaths++;
       eventBus.emit('player:killed', { killerId: sourceId || 'enemy', weaponName: 'Unknown', isHeadshot: false });
 
-      // Respawn after 3 seconds
-      setTimeout(() => {
-        this.respawn();
-      }, 3000);
+      // Online respawn is authoritative; offline mode keeps the local fallback timer.
+      if (!this.networkManager.isConnected) {
+        setTimeout(() => this.respawn(), 3000);
+      }
     }
   }
 
