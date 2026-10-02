@@ -69,13 +69,14 @@ export class ServerPhysics {
     this.world.step();
   }
 
-  public raycast(origin: [number, number, number], direction: [number, number, number], maxDistance: number, exclude?: RAPIER.RigidBody): { collider: RAPIER.Collider; toi: number; normal: RAPIER.Vector3 } | null {
+  public raycast(origin: [number, number, number], direction: [number, number, number], maxDistance: number): any {
     const dir = new THREE.Vector3(...direction).normalize();
     const ray = new this.rapier.Ray(
       { x: origin[0], y: origin[1], z: origin[2] },
       { x: dir.x, y: dir.y, z: dir.z }
     );
-    return this.world.castRayAndGetNormal(ray, maxDistance, true, undefined, undefined, undefined, undefined, exclude) as any;
+    const staticOnlyGroups = (0xffff << 16) | CollisionGroup.STATIC_GEOMETRY;
+    return this.world.castRayAndGetNormal(ray, maxDistance, true, undefined, staticOnlyGroups) as any;
   }
 
   private buildArena(): void {
