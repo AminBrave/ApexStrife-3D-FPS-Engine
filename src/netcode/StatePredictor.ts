@@ -106,7 +106,7 @@ export class StatePredictor {
       const preRollbackPos = controller.position.clone();
 
       // 1. Roll back to server authoritative state
-      controller.position.set(sPos[0], sPos[1], sPos[2]);
+      controller.setPosition(new THREE.Vector3(sPos[0], sPos[1], sPos[2]));
       controller.velocity.set(serverState.velocity[0], serverState.velocity[1], serverState.velocity[2]);
       controller.isGrounded = serverState.isGrounded;
       controller.isCrouching = serverState.isCrouching;
