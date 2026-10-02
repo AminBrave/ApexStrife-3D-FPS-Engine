@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { stepHorizontalVelocity } from '../src/gameplay/MovementSimulation';
 import { ARENA_BOXES, ARENA_SPAWNS, ARENA_FLOOR_TOP } from '../src/world/ArenaDefinition';
+import { WEAPONS, deterministicSpread } from '../src/gameplay/WeaponDefinitions';
 
 function state(grounded = true) {
   return { velocity: [0, 0, 0] as [number, number, number], isGrounded: grounded };
@@ -37,3 +38,10 @@ for (const spawn of ARENA_SPAWNS) {
 }
 
 console.log('gameplay tests passed');
+
+assert(deterministicSpread(42, 0, WEAPONS.ar.spreadRadians)[0] === deterministicSpread(42, 0, WEAPONS.ar.spreadRadians)[0], 'weapon spread must be deterministic');
+assert(WEAPONS.shotgun.pelletCount === 8, 'shotgun pellet count must remain authoritative');
+for (const weapon of Object.values(WEAPONS)) {
+  assert(weapon.spreadRadians >= 0 && weapon.spreadRadians < 0.2, 'weapon spread must remain within gameplay bounds');
+}
+console.log('Authoritative weapon tests passed.');
