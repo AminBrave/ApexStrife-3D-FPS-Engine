@@ -3,7 +3,7 @@ import { ServerPhysics } from './ServerPhysics';
 import { PlayerInput, PlayerState } from '../netcode/StatePredictor';
 import type { EntitySnapshot } from '../netcode/Interpolator';
 import type { ShotCommand, ReloadCommand } from '../netcode/Protocol';
-import { WEAPONS, weaponIdFromIndex, type WeaponId } from '../gameplay/WeaponDefinitions';
+import { WEAPONS, weaponIdFromIndex, deterministicSpread, type WeaponId } from '../gameplay/WeaponDefinitions';
 import { stepHorizontalVelocity } from '../gameplay/MovementSimulation';
 import { ARENA_SPAWNS } from '../world/ArenaDefinition';
 
@@ -261,6 +261,7 @@ export class GameServer {
     const shot = data as Partial<ShotCommand>;
     if (!this.isWeaponId(shot.weaponId)) return;
     if (player.weaponId !== shot.weaponId) return;
+    if (!Number.isFinite(shot.aimYaw) || !Number.isFinite(shot.aimPitch)) return;
     if (!Array.isArray(shot.directions) || shot.directions.length === 0 || shot.directions.length > 8) return;
 
     const weapon = WEAPONS[shot.weaponId];
@@ -280,8 +281,11 @@ export class GameServer {
     player.lastShotAt = now;
     player.ammoInMag[weapon.id]--;
 
+    const baseDirection = this.directionFromAim(shot.aimYaw!, shot.aimPitch!);
+
     if (weapon.kind === 'projectile') {
-      const direction = this.normalizeDirection(shot.directions[0]);
+      const [sx, sy] = deterministicSpread(shot.sequence || 0, 0, weapon.spreadRadians);
+      const direction = this.applySpread(baseDirection, sx, sy);
       this.projectiles.push({
         ownerId: player.id,
         position: [origin[0] + direction[0] * 0.8, origin[1] + direction[1] * 0.8, origin[2] + direction[2] * 0.8],
@@ -296,8 +300,10 @@ export class GameServer {
     const historical = this.findHistoryAt(shotTime);
     if (!historical) return;
 
-    for (const rawDirection of shot.directions) {
-      const direction = this.normalizeDirection(rawDirection);
+    const pelletCount = weapon.pelletCount ?? 1;
+    for (let pelletIndex = 0; pelletIndex < pelletCount; pelletIndex++) {
+      const [sx, sy] = deterministicSpread(shot.sequence || 0, pelletIndex, weapon.spreadRadians);
+      const direction = this.applySpread(baseDirection, sx, sy);
       const hit = this.resolveHitscan(player.id, origin, direction, historical, weapon.damage, weapon.headshotMultiplier);
       if (hit) {
         const damage = hit.headshot ? weapon.damage * weapon.headshotMultiplier : weapon.damage;
@@ -608,6 +614,24 @@ export class GameServer {
     return distance <= 1.5 ? [requested[0], requested[1], requested[2]] : eye;
   }
 
+  private directionFromAim(yaw: number, pitch: number): [number, number, number] {
+    const cp = Math.cos(pitch);
+    return [Math.sin(yaw) * cp, -Math.sin(pitch), -Math.cos(yaw) * cp];
+  }
+
+  private applySpread(direction: [number, number, number], rightOffset: number, upOffset: number): [number, number, number] {
+    const forward = new THREE.Vector3(...direction).normalize();
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(forward, worldUp).normalize();
+    if (right.lengthSq() < 0.0001) right.set(1, 0, 0);
+    const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+    return this.normalizeDirection([
+      forward.x + right.x * rightOffset + up.x * upOffset,
+      forward.y + right.y * rightOffset + up.y * upOffset,
+      forward.z + right.z * rightOffset + up.z * upOffset,
+    ]);
+  }
+
   private normalizeDirection(raw: unknown): [number, number, number] {
     const a = Array.isArray(raw) && raw.length === 3 ? raw.map(Number) : [0, 0, -1];
     const length = Math.hypot(a[0], a[1], a[2]);
@@ -651,7 +675,8 @@ export class GameServer {
     for (const p of this.players.values()) {
       this.send(p, 'snapshot', {
         tick:this.currentTick,timestamp:now,lastAckSequence:p.lastProcessedSequence,authoritativeState:p.state,
-        health:p.health,maxHealth:p.maxHealth,entities,
+        health:p.health,maxHealth:p.maxHealth,weaponId:p.weaponId,ammoInMag:p.ammoInMag,ammoInReserve:p.ammoInReserve,
+        reloadUntil:p.reloadUntil,entities,
       });
     }
   }
