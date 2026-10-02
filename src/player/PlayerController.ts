@@ -12,6 +12,7 @@ import { StatePredictor, PlayerInput, PlayerState } from '../netcode/StatePredic
 import { NetworkManager } from '../netcode/NetworkManager';
 import { eventBus } from '../core/EventBus';
 import { soundSynth } from '../audio/SoundSynthesizer';
+import { ARENA_SPAWNS } from '../world/ArenaDefinition';
 
 export class PlayerController {
   public controller: CharacterController;
@@ -25,6 +26,7 @@ export class PlayerController {
   private mouseLeftDown: boolean = false;
   private mouseRightDown: boolean = false;
   private inputSequence: number = 0;
+  private jumpWasDown: boolean = false;
 
   // Player Stats
   public health: number = 100;
@@ -68,20 +70,57 @@ export class PlayerController {
     window.addEventListener('mousemove', this.onMouseMove);
 
     // Event listeners
-    eventBus.on('weapon:hit', ({ targetId, damage, isHeadshot }) => {
+    // Apply the server's spawn transform before prediction starts. Without this,
+    // the client can repeatedly reconcile from its old offline spawn.
+    this.networkManager.onWelcomeCallback = (welcome) => {
+      const spawn = new THREE.Vector3(...welcome.spawnPosition);
+      this.controller.setPosition(spawn);
+      this.controller.velocity.set(0, 0, 0);
+      this.controller.isGrounded = true;
+      this.statePredictor.clear();
+    };
+
+    // Hitmarkers and score are driven only by authoritative server confirmations.
+    eventBus.on('weapon:hit', ({ isHeadshot }) => {
       this.score += isHeadshot ? 150 : 100;
-      this.networkManager.registerDamageToBot(
-        targetId,
-        damage,
-        isHeadshot,
-        this.weaponManager.currentWeapon.name
-      );
+      soundSynth.playHitmark(isHeadshot);
+    });
+
+    // Weapon hits are presentation feedback only. Damage is decided by the server.
+    eventBus.on('weapon:shot', ({ weaponId, origin, directions }) => {
+      this.networkManager.sendShot(weaponId as any, origin, directions, this.camera.yaw, this.camera.pitch);
+    });
+
+    eventBus.on('weapon:reload:start', ({ weaponId }) => {
+      this.networkManager.sendReload(weaponId as any);
+    });
+
+    eventBus.on('net:combat', (event) => {
+      if (event.targetId !== this.networkManager.clientId) {
+        if (event.shooterId === this.networkManager.clientId && event.event === 'hit') {
+          eventBus.emit('weapon:hit', {
+            targetId: event.targetId || '',
+            damage: event.damage || 0,
+            isHeadshot: !!event.headshot,
+            point: event.position || [0, 0, 0],
+            normal: [0, 1, 0],
+          });
+        }
+        return;
+      }
+
+      if (event.event === 'damage' && event.damage) {
+        this.takeDamage(event.damage, event.shooterId);
+      } else if (event.event === 'respawn') {
+        const position = Array.isArray(event.position) && event.position.length === 3
+          ? new THREE.Vector3(Number(event.position[0]), Number(event.position[1]), Number(event.position[2]))
+          : new THREE.Vector3(0, 0.9, 8);
+        this.respawn(position);
+      }
     });
 
     eventBus.on('net:killfeed', ({ killer }) => {
-      if (killer === 'You') {
-        this.kills++;
-      }
+      if (killer === 'You') this.kills++;
     });
   }
 
@@ -157,7 +196,10 @@ export class PlayerController {
     if (this.keys['KeyD'] || this.keys['ArrowRight']) right += 1;
     if (this.keys['KeyA'] || this.keys['ArrowLeft']) right -= 1;
 
-    const jump = !!this.keys['Space'];
+    const jumpDown = !!this.keys['Space'];
+    // Jump is edge-triggered. Holding Space must not auto-jump every cooldown.
+    const jump = jumpDown && !this.jumpWasDown;
+    this.jumpWasDown = jumpDown;
     const sprint = !!this.keys['ShiftLeft'] || !!this.keys['ShiftRight'];
     const crouch = !!this.keys['KeyC'] || !!this.keys['ControlLeft'];
 
@@ -273,20 +315,22 @@ export class PlayerController {
       this.deaths++;
       eventBus.emit('player:killed', { killerId: sourceId || 'enemy', weaponName: 'Unknown', isHeadshot: false });
 
-      // Respawn after 3 seconds
-      setTimeout(() => {
-        this.respawn();
-      }, 3000);
+      // Online respawn is authoritative; offline mode keeps the local fallback timer.
+      if (!this.networkManager.isConnected) {
+        setTimeout(() => this.respawn(), 3000);
+      }
     }
   }
 
-  public respawn(): void {
+  public respawn(position: THREE.Vector3 = new THREE.Vector3(...ARENA_SPAWNS[0])): void {
     this.health = this.maxHealth;
     this.shield = this.maxShield;
     this.isDead = false;
-    this.controller.position.set(0, 2, 0);
+    this.controller.setPosition(position);
+    this.statePredictor.clear();
     this.controller.velocity.set(0, 0, 0);
-    eventBus.emit('player:respawn', { position: [0, 2, 0] });
+    this.controller.isGrounded = true;
+    eventBus.emit('player:respawn', { position: [position.x, position.y, position.z] });
   }
 
   public dispose(): void {

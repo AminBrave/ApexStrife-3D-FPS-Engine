@@ -10,6 +10,7 @@ import { RecoilSystem, RecoilProfile } from './RecoilSystem';
 import { PhysicsEngine, CollisionGroup } from '../physics/PhysicsEngine';
 import { soundSynth } from '../audio/SoundSynthesizer';
 import { eventBus } from '../core/EventBus';
+import { SURFACE_MATERIALS, type SurfaceMaterialId } from '../world/SurfaceMaterial';
 
 export enum WeaponState {
   IDLE = 'IDLE',
@@ -197,6 +198,7 @@ export class WeaponManager {
   private fireTimer: number = 0;
   private stateTimer: number = 0;
   private isTriggerHeld: boolean = false;
+  private movementTimer: number = 0;
 
   // Visual effects
   private worldScene: THREE.Scene;
@@ -386,6 +388,14 @@ export class WeaponManager {
     this.weaponMeshes.push(plGroup);
   }
 
+  public getMuzzleWorldPosition(): THREE.Vector3 {
+    const activeMesh = this.weaponMeshes[this.currentWeaponIndex];
+    if (!activeMesh) return this.viewmodelCamera.position.clone();
+    const muzzle = new THREE.Vector3(0, 0.015, -0.52);
+    activeMesh.updateMatrixWorld(true);
+    return activeMesh.localToWorld(muzzle);
+  }
+
   private showActiveWeaponMesh(): void {
     this.weaponMeshes.forEach((mesh, index) => {
       mesh.visible = index === this.currentWeaponIndex;
@@ -518,7 +528,8 @@ export class WeaponManager {
       }
     }
 
-    // Animate active viewmodel
+    // Animate active viewmodel with layered breathing, movement bob, mouse sway and recoil.
+    this.movementTimer += deltaTime * (isMoving ? 9.5 : 1.4);
     const activeMesh = this.weaponMeshes[this.currentWeaponIndex];
     if (activeMesh) {
       const targetBasePos = this.isAiming ? w.adsPos : w.hipPos;
@@ -527,18 +538,23 @@ export class WeaponManager {
       const swayX = -mouseDeltaX * 0.00008;
       const swayY = mouseDeltaY * 0.00008;
 
-      // Desired position = targetBasePos + recoil + sway
+      const bobStrength = isMoving ? 1 : 0.25;
+      const bobX = Math.cos(this.movementTimer * 0.5) * 0.012 * bobStrength;
+      const bobY = Math.abs(Math.sin(this.movementTimer)) * 0.014 * bobStrength;
+      const breatheX = Math.cos(this.movementTimer * 0.37) * 0.002;
+      const breatheY = Math.sin(this.movementTimer * 0.31) * 0.0025;
+
+      // Desired position = base + recoil + input sway + locomotion bob.
       const targetPos = new THREE.Vector3(
-        targetBasePos.x + this.recoilSystem.weaponPosOffset.x + swayX,
-        targetBasePos.y + this.recoilSystem.weaponPosOffset.y + swayY,
-        targetBasePos.z + this.recoilSystem.weaponPosOffset.z
+        targetBasePos.x + this.recoilSystem.weaponPosOffset.x + swayX + bobX + breatheX,
+        targetBasePos.y + this.recoilSystem.weaponPosOffset.y + swayY + bobY + breatheY,
+        targetBasePos.z + this.recoilSystem.weaponPosOffset.z + Math.sin(this.movementTimer * 0.5) * 0.006 * bobStrength
       );
 
-      // Desired rotation = recoil + sway
       const targetRot = new THREE.Euler(
-        this.recoilSystem.weaponRotOffset.x + swayY * 1.5,
-        this.recoilSystem.weaponRotOffset.y + swayX * 1.5,
-        this.recoilSystem.weaponRotOffset.z,
+        this.recoilSystem.weaponRotOffset.x + swayY * 1.5 + Math.sin(this.movementTimer) * 0.012 * bobStrength,
+        this.recoilSystem.weaponRotOffset.y + swayX * 1.5 + Math.cos(this.movementTimer * 0.5) * 0.009 * bobStrength,
+        this.recoilSystem.weaponRotOffset.z + Math.cos(this.movementTimer * 0.5) * 0.018 * bobStrength,
         'YXZ'
       );
 
@@ -582,22 +598,33 @@ export class WeaponManager {
     else if (w.id === 'sniper') soundSynth.playSniper();
     else if (w.id === 'plasma') soundSynth.playPlasmaFire();
 
-    const origin = worldCamera.position.clone();
+    // Ballistics originate at the actual weapon muzzle, not the camera center.
+    const origin = this.getMuzzleWorldPosition();
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(worldCamera.quaternion);
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(worldCamera.quaternion);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(worldCamera.quaternion);
 
-    // Firing logic
+    // Client performs presentation/local prediction only. The server receives the
+    // exact shot directions and independently validates ammo, cadence, and damage.
+    const shotDirections: [number, number, number][] = [];
     if (w.type === 'hitscan') {
       const pelletCount = w.pelletCount ?? 1;
       for (let i = 0; i < pelletCount; i++) {
         const spreadDir = this.recoilSystem.applySpreadToDirection(forward, up, right);
+        shotDirections.push([spreadDir.x, spreadDir.y, spreadDir.z]);
         this.performHitscanRay(origin, spreadDir, w);
       }
-    } else if (w.type === 'projectile') {
+    } else {
       const spreadDir = this.recoilSystem.applySpreadToDirection(forward, up, right);
+      shotDirections.push([spreadDir.x, spreadDir.y, spreadDir.z]);
       this.spawnPlasmaProjectile(origin, spreadDir, w);
     }
+
+    eventBus.emit('weapon:shot', {
+      weaponId: w.id,
+      origin: [origin.x, origin.y, origin.z],
+      directions: shotDirections,
+    });
 
     eventBus.emit('weapon:fire', {
       weaponId: w.id,
@@ -615,26 +642,23 @@ export class WeaponManager {
       direction,
       300,
       0xffff,
-      CollisionGroup.STATIC_GEOMETRY | CollisionGroup.HITBOX | CollisionGroup.PLAYER_CAPSULE
+      CollisionGroup.STATIC_GEOMETRY | CollisionGroup.HITBOX
     );
 
     const hitPoint = rayResult.point;
     this.createTracer(origin, hitPoint);
 
     if (rayResult.hit) {
-      this.createImpactSparks(hitPoint, rayResult.normal);
+      const materialId = (rayResult.userData?.material ?? 'concrete') as SurfaceMaterialId;
+      const surface = SURFACE_MATERIALS[materialId] ?? SURFACE_MATERIALS.concrete;
+      this.createImpactSparks(hitPoint, rayResult.normal, surface.sparkCount, surface.impactColor, surface.sparkSpeed);
 
       // Check if target is remote player or dummy target
       const userData = rayResult.userData;
       const isHeadshot = userData?.part === 'head';
       const damage = weapon.damage * (isHeadshot ? weapon.headshotMultiplier : 1.0);
 
-      soundSynth.playHitmark(isHeadshot);
-
-      eventBus.emit('weapon:hit', {
-        targetId: userData?.id || 'target_entity',
-        damage,
-        isHeadshot,
+      eventBus.emit('weapon:impact', {
         point: [hitPoint.x, hitPoint.y, hitPoint.z],
         normal: [rayResult.normal.x, rayResult.normal.y, rayResult.normal.z],
       });
@@ -693,10 +717,7 @@ export class WeaponManager {
     eventBus.emit('camera:shake', { intensity: 0.45, decay: 3.5 });
     this.createImpactSparks(center, new THREE.Vector3(0, 1, 0), 40, 0x00ff88);
 
-    eventBus.emit('weapon:hit', {
-      targetId: 'splash_area',
-      damage,
-      isHeadshot: false,
+    eventBus.emit('weapon:impact', {
       point: [center.x, center.y, center.z],
       normal: [0, 1, 0],
     });
@@ -732,7 +753,13 @@ export class WeaponManager {
     }
   }
 
-  private createImpactSparks(point: THREE.Vector3, normal: THREE.Vector3, count: number = 18, colorHex: number = 0xffaa33): void {
+  private createImpactSparks(
+    point: THREE.Vector3,
+    normal: THREE.Vector3,
+    count: number = 18,
+    colorHex: number = 0xffaa33,
+    sparkSpeed: number = 7
+  ): void {
     const countSparks = count;
     const positions = new Float32Array(countSparks * 3);
     const velocities: THREE.Vector3[] = [];
@@ -747,7 +774,7 @@ export class WeaponManager {
         normal.x + (Math.random() - 0.5) * 1.5,
         normal.y + Math.random() * 1.5,
         normal.z + (Math.random() - 0.5) * 1.5
-      ).normalize().multiplyScalar(4 + Math.random() * 8);
+      ).normalize().multiplyScalar(sparkSpeed * (0.65 + Math.random() * 0.7));
 
       velocities.push(randDir);
     }

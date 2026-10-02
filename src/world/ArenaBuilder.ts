@@ -1,12 +1,11 @@
 /**
  * ArenaBuilder.ts
- * Generates the sci-fi combat training facility arena:
- * floors, perimeter containment walls, ramps, elevated catwalks, tactical cover crates,
- * dynamic shadows, atmospheric lighting, and interactive target dummies.
+ * Shared collision/visual town arena with sunset lighting and material-aware surfaces.
  */
-
 import * as THREE from 'three';
 import { PhysicsEngine } from '../physics/PhysicsEngine';
+import { ARENA_BOXES } from './ArenaDefinition';
+import { SURFACE_MATERIALS, type SurfaceMaterialId } from './SurfaceMaterial';
 
 export class ArenaBuilder {
   private scene: THREE.Scene;
@@ -18,277 +17,190 @@ export class ArenaBuilder {
   }
 
   public build(): void {
-    // 1. Lighting Setup
-    const ambientLight = new THREE.AmbientLight(0x1a2233, 1.2);
-    this.scene.add(ambientLight);
-
-    const hemiLight = new THREE.HemisphereLight(0x384a68, 0x111622, 0.8);
-    this.scene.add(hemiLight);
-
-    // Key directional light with high quality shadow mapping
-    const dirLight = new THREE.DirectionalLight(0xdde8ff, 2.2);
-    dirLight.position.set(25, 45, 20);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.width = 2048;
-    dirLight.shadow.mapSize.height = 2048;
-    dirLight.shadow.camera.near = 0.5;
-    dirLight.shadow.camera.far = 120;
-    const d = 45;
-    dirLight.shadow.camera.left = -d;
-    dirLight.shadow.camera.right = d;
-    dirLight.shadow.camera.top = d;
-    dirLight.shadow.camera.bottom = -d;
-    dirLight.shadow.bias = -0.0005;
-    this.scene.add(dirLight);
-
-    // Atmospheric neon accent point lights
-    const cyanLight = new THREE.PointLight(0x00f0ff, 3.5, 28);
-    cyanLight.position.set(-15, 6, -10);
-    this.scene.add(cyanLight);
-
-    const orangeLight = new THREE.PointLight(0xff6600, 3.5, 28);
-    orangeLight.position.set(15, 6, -20);
-    this.scene.add(orangeLight);
-
-    // 2. Materials
-    const floorMat = new THREE.MeshStandardMaterial({
-      color: 0x181c24,
-      roughness: 0.65,
-      metalness: 0.35,
-    });
-
-    const wallMat = new THREE.MeshStandardMaterial({
-      color: 0x222733,
-      roughness: 0.7,
-      metalness: 0.2,
-    });
-
-    const accentMat = new THREE.MeshStandardMaterial({
-      color: 0x2e3648,
-      roughness: 0.5,
-      metalness: 0.6,
-    });
-
-    const crateMat = new THREE.MeshStandardMaterial({
-      color: 0x475569,
-      roughness: 0.45,
-      metalness: 0.5,
-    });
-
-    const neonCyan = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
-    const neonOrange = new THREE.MeshBasicMaterial({ color: 0xff6600 });
-
-    // 3. Main Arena Floor (90m x 90m)
-    const floorGeom = new THREE.BoxGeometry(90, 2, 90);
-    const floorMesh = new THREE.Mesh(floorGeom, floorMat);
-    floorMesh.position.set(0, -1, 0);
-    floorMesh.receiveShadow = true;
-    this.scene.add(floorMesh);
-
-    // Grid markings on floor
-    const grid = new THREE.GridHelper(90, 45, 0x00f0ff, 0x263345);
-    grid.position.y = 0.02;
-    this.scene.add(grid);
-
-    // Physics floor
-    this.physicsEngine.createStaticBox(
-      new THREE.Vector3(0, -1, 0),
-      new THREE.Vector3(45, 1, 45),
-      undefined,
-      { type: 'ground' }
-    );
-
-    // 4. Perimeter Walls (Height: 12m)
-    const wallHeight = 12;
-    const wallThickness = 2;
-    const halfWidth = 45;
-
-    const wallsData = [
-      { pos: new THREE.Vector3(0, wallHeight / 2, -halfWidth), size: new THREE.Vector3(90, wallHeight, wallThickness) },
-      { pos: new THREE.Vector3(0, wallHeight / 2, halfWidth), size: new THREE.Vector3(90, wallHeight, wallThickness) },
-      { pos: new THREE.Vector3(-halfWidth, wallHeight / 2, 0), size: new THREE.Vector3(wallThickness, wallHeight, 90) },
-      { pos: new THREE.Vector3(halfWidth, wallHeight / 2, 0), size: new THREE.Vector3(wallThickness, wallHeight, 90) },
-    ];
-
-    wallsData.forEach(({ pos, size }) => {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), wallMat);
-      mesh.position.copy(pos);
-      mesh.receiveShadow = true;
-      mesh.castShadow = true;
-      this.scene.add(mesh);
-
-      // Neon trim strip on wall
-      const trimGeom = new THREE.BoxGeometry(size.x > size.z ? size.x : 0.4, 0.25, size.z > size.x ? size.z : 0.4);
-      const trimMesh = new THREE.Mesh(trimGeom, neonCyan);
-      trimMesh.position.set(pos.x, 3.5, pos.z);
-      this.scene.add(trimMesh);
-
-      this.physicsEngine.createStaticBox(
-        pos,
-        new THREE.Vector3(size.x / 2, size.y / 2, size.z / 2),
-        undefined,
-        { type: 'wall' }
-      );
-    });
-
-    // 5. High Catwalk / Elevated Sniping Platform (y = 4.0m)
-    const platformPos = new THREE.Vector3(12, 4.0, -25);
-    const platformSize = new THREE.Vector3(14, 0.6, 12);
-
-    const platformMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(platformSize.x, platformSize.y, platformSize.z),
-      accentMat
-    );
-    platformMesh.position.copy(platformPos);
-    platformMesh.castShadow = true;
-    platformMesh.receiveShadow = true;
-    this.scene.add(platformMesh);
-
-    this.physicsEngine.createStaticBox(
-      platformPos,
-      new THREE.Vector3(platformSize.x / 2, platformSize.y / 2, platformSize.z / 2),
-      undefined,
-      { type: 'platform' }
-    );
-
-    // Platform support pillars
-    const pillarPositions = [
-      new THREE.Vector3(6, 2, -19),
-      new THREE.Vector3(18, 2, -19),
-      new THREE.Vector3(6, 2, -31),
-      new THREE.Vector3(18, 2, -31),
-    ];
-    pillarPositions.forEach((pPos) => {
-      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 4, 12), accentMat);
-      pillar.position.copy(pPos);
-      pillar.castShadow = true;
-      this.scene.add(pillar);
-
-      this.physicsEngine.createStaticBox(
-        pPos,
-        new THREE.Vector3(0.4, 2, 0.4),
-        undefined,
-        { type: 'pillar' }
-      );
-    });
-
-    // 6. Slanted Access Ramp (Testing character slope climb)
-    const rampLength = 9.5;
-    const rampWidth = 4.0;
-    const rampThickness = 0.5;
-    const rampAngle = (25 * Math.PI) / 180; // 25 degree gentle climbable slope
-
-    const rampPos = new THREE.Vector3(12, 2.0, -14.5);
-    const rampMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(rampWidth, rampThickness, rampLength),
-      accentMat
-    );
-    rampMesh.rotation.x = -rampAngle;
-    rampMesh.position.copy(rampPos);
-    rampMesh.castShadow = true;
-    rampMesh.receiveShadow = true;
-    this.scene.add(rampMesh);
-
-    const rampQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-rampAngle, 0, 0));
-    this.physicsEngine.createStaticBox(
-      rampPos,
-      new THREE.Vector3(rampWidth / 2, rampThickness / 2, rampLength / 2),
-      rampQuat,
-      { type: 'ramp' }
-    );
-
-    // 7. Tactical Cover Crates & Barrier Blocks
-    const crates = [
-      // Central skirmish cover
-      { pos: new THREE.Vector3(0, 1.0, -10), size: new THREE.Vector3(3.2, 2.0, 1.2), rotY: 0.1 },
-      { pos: new THREE.Vector3(-4.5, 0.75, -12), size: new THREE.Vector3(2.0, 1.5, 2.0), rotY: 0.35 },
-      { pos: new THREE.Vector3(5.0, 0.75, -8), size: new THREE.Vector3(2.2, 1.5, 2.2), rotY: -0.2 },
-      // Left lane cover
-      { pos: new THREE.Vector3(-14, 1.2, -18), size: new THREE.Vector3(4.0, 2.4, 1.6), rotY: 0.4 },
-      { pos: new THREE.Vector3(-18, 0.8, -24), size: new THREE.Vector3(2.5, 1.6, 2.5), rotY: 0.0 },
-      // Right lane obstacles
-      { pos: new THREE.Vector3(18, 1.0, -5), size: new THREE.Vector3(3.0, 2.0, 1.5), rotY: -0.3 },
-      { pos: new THREE.Vector3(22, 1.4, -14), size: new THREE.Vector3(4.2, 2.8, 1.8), rotY: 0.2 },
-      // Back sniper cover
-      { pos: new THREE.Vector3(-8, 1.2, 10), size: new THREE.Vector3(3.5, 2.4, 1.5), rotY: 0 },
-      { pos: new THREE.Vector3(8, 1.2, 10), size: new THREE.Vector3(3.5, 2.4, 1.5), rotY: 0 },
-    ];
-
-    crates.forEach(({ pos, size, rotY }) => {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), crateMat);
-      mesh.position.copy(pos);
-      mesh.rotation.y = rotY;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      this.scene.add(mesh);
-
-      // Fluorescent warning stripe on crate
-      const stripe = new THREE.Mesh(new THREE.BoxGeometry(size.x * 1.01, 0.15, size.z * 1.01), neonOrange);
-      stripe.position.copy(pos);
-      stripe.rotation.y = rotY;
-      this.scene.add(stripe);
-
-      const quat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rotY, 0));
-      this.physicsEngine.createStaticBox(
-        pos,
-        new THREE.Vector3(size.x / 2, size.y / 2, size.z / 2),
-        quat,
-        { type: 'crate' }
-      );
-    });
-
-    // 8. Target Dummies for Practice Shooting
+    this.buildLighting();
+    this.buildSharedGeometry();
+    this.buildStreetDetails();
     this.createTargetDummy(new THREE.Vector3(-8, 0, -8), 'Target Dummy A');
     this.createTargetDummy(new THREE.Vector3(0, 0, -22), 'Target Dummy B');
     this.createTargetDummy(new THREE.Vector3(-18, 0, -32), 'Target Dummy C');
   }
 
-  private createTargetDummy(pos: THREE.Vector3, name: string): void {
-    const dummyGroup = new THREE.Group();
-    dummyGroup.position.copy(pos);
+  private buildLighting(): void {
+    this.scene.background = new THREE.Color(0x5d7894);
 
-    // Stand base
-    const baseMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8 });
+    const hemi = new THREE.HemisphereLight(0xffc58a, 0x263044, 1.65);
+    this.scene.add(hemi);
+
+    const sun = new THREE.DirectionalLight(0xffb36b, 3.0);
+    sun.position.set(-28, 42, 18);
+    sun.castShadow = true;
+    sun.shadow.mapSize.width = 2048;
+    sun.shadow.mapSize.height = 2048;
+    sun.shadow.camera.near = 0.5;
+    sun.shadow.camera.far = 130;
+    sun.shadow.camera.left = -55;
+    sun.shadow.camera.right = 55;
+    sun.shadow.camera.top = 55;
+    sun.shadow.camera.bottom = -55;
+    sun.shadow.bias = -0.0004;
+    this.scene.add(sun);
+
+    const warmFill = new THREE.PointLight(0xff8a52, 9, 38);
+    warmFill.position.set(20, 7, -24);
+    this.scene.add(warmFill);
+
+    const coolFill = new THREE.PointLight(0x6aa8ff, 4, 42);
+    coolFill.position.set(-25, 5, 10);
+    this.scene.add(coolFill);
+
+    const street = new THREE.PointLight(0xffd28a, 7, 18);
+    street.position.set(10, 4, 29);
+    this.scene.add(street);
+  }
+
+  private buildSharedGeometry(): void {
+    const grid = new THREE.GridHelper(90, 45, 0x6e8092, 0x394552);
+    grid.position.y = 0.02;
+    this.scene.add(grid);
+
+    for (const box of ARENA_BOXES) {
+      const size = new THREE.Vector3(box.halfExtents[0] * 2, box.halfExtents[1] * 2, box.halfExtents[2] * 2);
+      const materialId = box.material as SurfaceMaterialId;
+      const surface = SURFACE_MATERIALS[materialId] ?? SURFACE_MATERIALS.concrete;
+      const material = new THREE.MeshStandardMaterial({
+        color: this.colorForType(box.type, materialId),
+        roughness: surface.roughness,
+        metalness: surface.metalness,
+      });
+
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), material);
+      mesh.position.set(...box.position);
+      mesh.rotation.x = box.rotationX ?? 0;
+      mesh.rotation.y = box.rotationY ?? 0;
+      mesh.castShadow = box.type !== 'ground';
+      mesh.receiveShadow = true;
+      mesh.userData = { type: box.type, material: materialId };
+      this.scene.add(mesh);
+
+      if (box.type === 'crate' || box.type === 'dumpster') this.addObjectDetail(mesh, box.type, size);
+      if (box.type === 'building_wall') this.addWindows(box.position, size, box.rotationY ?? 0);
+      if (box.type === 'streetlight_arm') {
+        const lamp = new THREE.PointLight(0xffc878, 2.5, 12);
+        lamp.position.set(box.position[0] + 1.5, box.position[1] - 0.1, box.position[2]);
+        this.scene.add(lamp);
+      }
+
+      const quat = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(box.rotationX ?? 0, box.rotationY ?? 0, 0)
+      );
+      this.physicsEngine.createStaticBox(
+        new THREE.Vector3(...box.position),
+        new THREE.Vector3(...box.halfExtents),
+        quat,
+        { type: box.type, material: materialId }
+      );
+    }
+  }
+
+  private colorForType(type: string, material: SurfaceMaterialId): number {
+    if (type === 'ground') return 0x313943;
+    if (type === 'building_wall') return material === 'brick' ? 0x7b4a3b : 0x626a73;
+    if (type === 'roof') return 0x343b45;
+    if (type === 'crate' || type === 'shop_counter') return 0x6b4a2f;
+    if (type === 'dumpster') return 0x3f5860;
+    if (type === 'streetlight' || type === 'streetlight_arm') return 0x252a30;
+    if (type === 'barrier') return 0x8b8f92;
+    return material === 'metal' ? 0x4e5967 : 0x59616b;
+  }
+
+  private addObjectDetail(mesh: THREE.Mesh, type: string, size: THREE.Vector3): void {
+    const accent = new THREE.MeshStandardMaterial({ color: type === 'dumpster' ? 0x172126 : 0xc27a35, metalness: 0.65, roughness: 0.35 });
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(size.x * 0.86, 0.06, size.z * 0.86), accent);
+    lid.position.set(0, size.y * 0.53, 0);
+    mesh.add(lid);
+  }
+
+  private addWindows(position: [number, number, number], size: THREE.Vector3, rotationY: number): void {
+    const glass = new THREE.MeshBasicMaterial({ color: 0x9ddcff, transparent: true, opacity: 0.7 });
+    const count = Math.max(2, Math.floor(size.x / 3));
+    for (let i = 0; i < count; i++) {
+      const x = -size.x * 0.5 + (i + 0.5) * (size.x / count);
+      const pane = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.1, 0.05), glass);
+      pane.position.set(position[0] + x, position[1] + 1.9, position[2] - size.z * 0.51);
+      pane.rotation.y = rotationY;
+      pane.userData = { material: 'glass' };
+      this.scene.add(pane);
+    }
+  }
+
+  private buildStreetDetails(): void {
+    // Simple town geometry that is visual-only; gameplay collision remains driven by ARENA_BOXES.
+    const roadMat = new THREE.MeshStandardMaterial({ color: 0x20252b, roughness: 0.92 });
+    const road = new THREE.Mesh(new THREE.BoxGeometry(48, 0.04, 5), roadMat);
+    road.position.set(0, 0.025, 24);
+    road.receiveShadow = true;
+    this.scene.add(road);
+
+    const lineMat = new THREE.MeshBasicMaterial({ color: 0xffd78a });
+    for (let x = -20; x <= 20; x += 8) {
+      const line = new THREE.Mesh(new THREE.BoxGeometry(4, 0.045, 0.12), lineMat);
+      line.position.set(x, 0.05, 24);
+      this.scene.add(line);
+    }
+
+    const signMat = new THREE.MeshStandardMaterial({ color: 0x35404c, metalness: 0.7, roughness: 0.35 });
+    const sign = new THREE.Group();
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 2.4, 10), signMat);
+    pole.position.y = 1.2;
+    sign.add(pole);
+    const board = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.55, 0.08), new THREE.MeshBasicMaterial({ color: 0xff9b58 }));
+    board.position.y = 2.35;
+    sign.add(board);
+    sign.position.set(-10, 0, 24);
+    this.scene.add(sign);
+  }
+
+  private createTargetDummy(pos: THREE.Vector3, name: string): void {
+    const group = new THREE.Group();
+    group.position.copy(pos);
+
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x33373d, metalness: 0.8, roughness: 0.35 });
     const base = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 0.2, 16), baseMat);
     base.position.y = 0.1;
-    dummyGroup.add(base);
+    group.add(base);
 
-    // Pole
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.1, 10), baseMat);
     pole.position.y = 0.65;
-    dummyGroup.add(pole);
+    group.add(pole);
 
-    // Torso Target (Red bullseye)
-    const torsoMat = new THREE.MeshStandardMaterial({ color: 0xbb2222, metalness: 0.3 });
+    const torsoMat = new THREE.MeshStandardMaterial({ color: 0xbb332f, metalness: 0.25, roughness: 0.6 });
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.15), torsoMat);
     torso.position.y = 1.35;
     torso.castShadow = true;
-    (torso as any).userData = { id: name, type: 'dummy', part: 'body' };
-    dummyGroup.add(torso);
+    torso.userData = { id: name, type: 'dummy', part: 'body' };
+    group.add(torso);
 
-    // Head Target (Yellow headshot zone)
-    const headMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, metalness: 0.4 });
+    const headMat = new THREE.MeshStandardMaterial({ color: 0xffcc55, metalness: 0.25, roughness: 0.5 });
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12), headMat);
     head.position.y = 1.85;
     head.castShadow = true;
-    (head as any).userData = { id: name, type: 'dummy', part: 'head' };
-    dummyGroup.add(head);
+    head.userData = { id: name, type: 'dummy', part: 'head' };
+    group.add(head);
 
-    this.scene.add(dummyGroup);
-
-    // Physics colliders for target torso and head
+    this.scene.add(group);
     this.physicsEngine.createStaticBox(
       new THREE.Vector3(pos.x, pos.y + 1.35, pos.z),
       new THREE.Vector3(0.25, 0.35, 0.1),
       undefined,
-      { id: name, type: 'dummy', part: 'body' }
+      { id: name, type: 'dummy', part: 'body', material: 'metal' },
+      { sensor: true }
     );
-
     this.physicsEngine.createStaticBox(
       new THREE.Vector3(pos.x, pos.y + 1.85, pos.z),
       new THREE.Vector3(0.18, 0.18, 0.18),
       undefined,
-      { id: name, type: 'dummy', part: 'head' }
+      { id: name, type: 'dummy', part: 'head', material: 'metal' },
+      { sensor: true }
     );
   }
 }

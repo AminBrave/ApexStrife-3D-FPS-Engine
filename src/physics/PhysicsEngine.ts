@@ -56,7 +56,8 @@ export class PhysicsEngine {
     direction: THREE.Vector3,
     maxDistance: number = 200,
     membershipMask: number = 0xffff,
-    filterMask: number = CollisionGroup.STATIC_GEOMETRY | CollisionGroup.HITBOX
+    filterMask: number = CollisionGroup.STATIC_GEOMETRY | CollisionGroup.HITBOX,
+    excludeRigidBody?: RAPIER.RigidBody
   ): RaycastResult {
     if (!this.isReady) {
       return { hit: false, point: new THREE.Vector3(), normal: new THREE.Vector3(0, 1, 0), distance: maxDistance };
@@ -68,15 +69,17 @@ export class PhysicsEngine {
       { x: dirNorm.x, y: dirNorm.y, z: dirNorm.z }
     );
 
-    // Encode interaction groups (upper 16 bits filter, lower 16 bits membership)
-    const interactionGroups = (filterMask << 16) | membershipMask;
+    // Rapier packs memberships in the upper 16 bits and filters in the lower 16 bits.
+    const interactionGroups = (membershipMask << 16) | filterMask;
 
     const hit = this.world.castRayAndGetNormal(
       ray,
       maxDistance,
       true, // solid hit
       undefined,
-      interactionGroups
+      interactionGroups,
+      undefined,
+      excludeRigidBody
     );
 
     if (hit) {
@@ -112,7 +115,8 @@ export class PhysicsEngine {
     position: THREE.Vector3,
     halfExtents: THREE.Vector3,
     quaternion: THREE.Quaternion = new THREE.Quaternion(),
-    userData?: any
+    userData?: any,
+    options: { sensor?: boolean } = {}
   ): { body: RAPIER.RigidBody; collider: RAPIER.Collider } {
     const bodyDesc = this.rapier.RigidBodyDesc.fixed()
       .setTranslation(position.x, position.y, position.z)
@@ -125,7 +129,7 @@ export class PhysicsEngine {
       .setFriction(0.6)
       .setRestitution(0.0);
 
-    const collider = this.world.createCollider(colliderDesc, body);
+    const collider = this.world.createCollider(colliderDesc.setSensor(!!options.sensor), body);
     if (userData) {
       (collider as any).userData = userData;
     }
@@ -141,8 +145,9 @@ export class PhysicsEngine {
    */
   public createCharacterController(offset: number = 0.02): RAPIER.KinematicCharacterController {
     const characterController = this.world.createCharacterController(offset);
-    characterController.enableAutostep(0.4, 0.25, true); // Auto-step stairs & curbs up to 0.4m
-    characterController.enableSnapToGround(0.35); // Snap to slopes & ground
+    characterController.enableAutostep(0.4, 0.25, false); // Step only over level geometry, never other players.
+    characterController.enableSnapToGround(0.2); // Small grounding tolerance prevents hover/bounce.
+    characterController.setUp({ x: 0, y: 1, z: 0 });
     characterController.setMaxSlopeClimbAngle((45 * Math.PI) / 180); // 45 degree slope max
     characterController.setMinSlopeSlideAngle((50 * Math.PI) / 180); // Slide down steep slopes
     return characterController;
@@ -163,7 +168,8 @@ export class PhysicsEngine {
     const body = this.world.createRigidBody(bodyDesc);
 
     const colliderDesc = this.rapier.ColliderDesc.capsule(halfHeight, radius)
-      .setCollisionGroups((CollisionGroup.PLAYER_CAPSULE << 16) | (CollisionGroup.STATIC_GEOMETRY | CollisionGroup.PLAYER_CAPSULE))
+      // Character controllers query only static level geometry. Players are not movement obstacles.
+      .setCollisionGroups((CollisionGroup.PLAYER_CAPSULE << 16) | CollisionGroup.STATIC_GEOMETRY)
       .setFriction(0.0)
       .setRestitution(0.0);
 

@@ -46,6 +46,8 @@ export async function bootstrapGame(canvas: HTMLCanvasElement): Promise<GameInst
   // 3. Build Sci-Fi Tactical Training Arena
   const arenaBuilder = new ArenaBuilder(engine.worldScene, physicsEngine);
   arenaBuilder.build();
+  // Populate Rapier's broad-phase before the first character-controller query.
+  physicsEngine.step(1 / 60);
 
   // 4. Kinematic Character Controller
   const characterController = new CharacterController(physicsEngine);
@@ -77,23 +79,8 @@ export async function bootstrapGame(canvas: HTMLCanvasElement): Promise<GameInst
   // 8. Netcode: Network Manager
   const networkManager = new NetworkManager();
 
-  // Wire snapshot reception from server
-  networkManager.onSnapshotCallback = (snapshot) => {
-    // A. Reconcile local prediction with authoritative server position
-    statePredictor.reconcile(
-      snapshot.lastAckSequence,
-      snapshot.authoritativeState,
-      characterController,
-      1 / 60
-    );
-
-    // B. Interpolate remote players & bots smoothly
-    interpolator.handleSnapshot(
-      snapshot.timestamp,
-      snapshot.entities,
-      networkManager.clientId
-    );
-  };
+  // Snapshot reception is wired after PlayerController creation so one authoritative
+  // handler owns movement reconciliation, remote interpolation, and combat state.
 
   // Wire welcome packet for initial spawn
   networkManager.onWelcomeCallback = (welcome) => {
@@ -112,6 +99,42 @@ export async function bootstrapGame(canvas: HTMLCanvasElement): Promise<GameInst
     statePredictor,
     networkManager
   );
+
+  networkManager.onSnapshotCallback = (snapshot) => {
+    statePredictor.reconcile(
+      snapshot.lastAckSequence,
+      snapshot.authoritativeState,
+      characterController,
+      1 / 60
+    );
+    interpolator.handleSnapshot(
+      snapshot.timestamp,
+      snapshot.entities,
+      networkManager.clientId
+    );
+
+    playerController.health = snapshot.health;
+    playerController.maxHealth = snapshot.maxHealth;
+    playerController.shield = snapshot.shield;
+    playerController.maxShield = snapshot.maxShield;
+    weaponManager.ammoInMag = [
+      snapshot.ammoInMag.ar,
+      snapshot.ammoInMag.shotgun,
+      snapshot.ammoInMag.sniper,
+      snapshot.ammoInMag.plasma,
+    ];
+    weaponManager.ammoInReserve = [
+      snapshot.ammoInReserve.ar,
+      snapshot.ammoInReserve.shotgun,
+      snapshot.ammoInReserve.sniper,
+      snapshot.ammoInReserve.plasma,
+    ];
+
+    const weaponIndex = ['ar', 'shotgun', 'sniper', 'plasma'].indexOf(snapshot.weaponId);
+    if (weaponIndex >= 0 && weaponIndex !== weaponManager.currentWeaponIndex) {
+      weaponManager.currentWeaponIndex = weaponIndex;
+    }
+  };
 
   // Connect to authoritative WebSocket server
   networkManager.connect();

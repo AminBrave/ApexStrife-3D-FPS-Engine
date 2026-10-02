@@ -106,7 +106,7 @@ export class StatePredictor {
       const preRollbackPos = controller.position.clone();
 
       // 1. Roll back to server authoritative state
-      controller.position.set(sPos[0], sPos[1], sPos[2]);
+      controller.setPosition(new THREE.Vector3(sPos[0], sPos[1], sPos[2]));
       controller.velocity.set(serverState.velocity[0], serverState.velocity[1], serverState.velocity[2]);
       controller.isGrounded = serverState.isGrounded;
       controller.isCrouching = serverState.isCrouching;
@@ -114,7 +114,7 @@ export class StatePredictor {
       // 2. Re-simulate all unacknowledged inputs up to the latest sequence
       const unacknowledged = this.inputBuffer.slice(ackIdx + 1);
       for (const entry of unacknowledged) {
-        controller.update(fixedTimestep, entry.input);
+        controller.update(fixedTimestep, entry.input, false);
         // Overwrite predicted state in buffer with newly corrected simulation
         entry.predictedState.position = [controller.position.x, controller.position.y, controller.position.z];
         entry.predictedState.velocity = [controller.velocity.x, controller.velocity.y, controller.velocity.z];

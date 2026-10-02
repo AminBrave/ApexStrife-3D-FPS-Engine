@@ -57,12 +57,12 @@ export class Engine {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.toneMappingExposure = 1.35;
 
     // Scenes
     this.worldScene = new THREE.Scene();
-    this.worldScene.background = new THREE.Color(0x0a0c12);
-    this.worldScene.fog = new THREE.FogExp2(0x0a0c12, 0.015);
+    this.worldScene.background = new THREE.Color(0x5d7894);
+    this.worldScene.fog = new THREE.FogExp2(0x596f84, 0.008);
 
     this.viewmodelScene = new THREE.Scene();
 

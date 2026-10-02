@@ -6,8 +6,10 @@
 
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { PhysicsEngine } from './PhysicsEngine';
+import { PhysicsEngine, CollisionGroup } from './PhysicsEngine';
 import { eventBus } from '../core/EventBus';
+import { stepHorizontalVelocity } from '../gameplay/MovementSimulation';
+import { ARENA_SPAWNS } from '../world/ArenaDefinition';
 
 export interface MovementInput {
   moveForward: number; // -1 to +1
@@ -19,9 +21,9 @@ export interface MovementInput {
 }
 
 export class CharacterController {
-  public position: THREE.Vector3 = new THREE.Vector3(0, 2, 0);
+  public position: THREE.Vector3 = new THREE.Vector3(...ARENA_SPAWNS[0]);
   public velocity: THREE.Vector3 = new THREE.Vector3();
-  public isGrounded: boolean = false;
+  public isGrounded: boolean = true;
   public isCrouching: boolean = false;
   public isSprinting: boolean = false;
 
@@ -55,12 +57,13 @@ export class CharacterController {
   public collider: RAPIER.Collider | null = null;
   private rapierController: RAPIER.KinematicCharacterController | null = null;
 
-  constructor(physicsEngine: PhysicsEngine, startPosition: THREE.Vector3 = new THREE.Vector3(0, 2, 0)) {
+  constructor(physicsEngine: PhysicsEngine, startPosition: THREE.Vector3 = new THREE.Vector3(...ARENA_SPAWNS[0])) {
     this.physicsEngine = physicsEngine;
     this.position.copy(startPosition);
 
     if (physicsEngine.isReady) {
       this.initPhysics();
+      this.isGrounded = true;
     }
   }
 
@@ -83,7 +86,7 @@ export class CharacterController {
   /**
    * Fixed physics tick update.
    */
-  public update(fixedDeltaTime: number, input: MovementInput): void {
+  public update(fixedDeltaTime: number, input: MovementInput, sideEffects: boolean = true): void {
     // 1. Handle Crouch Transition
     this.isCrouching = input.crouch;
     this.targetEyeHeight = this.isCrouching ? 0.95 : 1.65;
@@ -93,59 +96,21 @@ export class CharacterController {
     // 2. Sprint state (cannot sprint while crouching or moving backwards)
     this.isSprinting = input.sprint && !this.isCrouching && input.moveForward > 0;
 
-    // 3. Desired target speed
-    let targetSpeed = this.walkSpeed;
-    if (this.isCrouching) {
-      targetSpeed = this.crouchSpeed;
-    } else if (this.isSprinting) {
-      targetSpeed = this.sprintSpeed;
-    }
+    // 3-5. Shared deterministic horizontal movement solver.
+    const movementState = {
+      velocity: [this.velocity.x, this.velocity.y, this.velocity.z] as [number, number, number],
+      isGrounded: this.isGrounded,
+    };
+    stepHorizontalVelocity(movementState, input, fixedDeltaTime);
+    this.velocity.x = movementState.velocity[0];
+    this.velocity.z = movementState.velocity[2];
 
-    // 4. Direction assembly relative to camera yaw
-    const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), input.yaw);
-    const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), input.yaw);
-
-    const wishDir = new THREE.Vector3()
-      .addScaledVector(forward, input.moveForward)
-      .addScaledVector(right, input.moveRight);
-
-    if (wishDir.lengthSq() > 0.0001) {
-      wishDir.normalize();
-    }
-
-    // 5. Ground Check & Friction
     if (this.isGrounded) {
       this.coyoteTimer = this.coyoteTimeLimit;
-
-      // Apply ground friction to horizontal velocity
-      const horizVel = new THREE.Vector3(this.velocity.x, 0, this.velocity.z);
-      const speed = horizVel.length();
-      if (speed > 0.001) {
-        const drop = speed * this.groundFriction * fixedDeltaTime;
-        const newSpeed = Math.max(speed - drop, 0);
-        horizVel.multiplyScalar(newSpeed / speed);
-        this.velocity.x = horizVel.x;
-        this.velocity.z = horizVel.z;
-      }
-
-      // Ground Acceleration
-      this.accelerate(wishDir, targetSpeed, this.groundAcceleration, fixedDeltaTime);
-
-      // Snap vertical velocity down slightly to glue to slopes
-      if (this.velocity.y < 0) {
-        this.velocity.y = -0.5;
-      }
+      if (this.velocity.y < 0) this.velocity.y = -0.5;
     } else {
-      // Air acceleration (reduced steerability)
       this.coyoteTimer = Math.max(0, this.coyoteTimer - fixedDeltaTime);
-      this.accelerate(wishDir, targetSpeed, this.airAcceleration, fixedDeltaTime);
-
-      // Apply gravity
-      this.velocity.y += this.gravity * fixedDeltaTime;
-      // Terminal velocity clamp
-      if (this.velocity.y < -45.0) {
-        this.velocity.y = -45.0;
-      }
+      this.velocity.y = Math.max(-45, this.velocity.y + this.gravity * fixedDeltaTime);
     }
 
     // 6. Jumping
@@ -158,7 +123,7 @@ export class CharacterController {
       this.isGrounded = false;
       this.coyoteTimer = 0;
       this.jumpCooldown = 0.2; // 200ms jump debounce
-      eventBus.emit('player:jump', { velocity: this.jumpSpeed });
+      if (sideEffects) eventBus.emit('player:jump', { velocity: this.jumpSpeed });
     }
 
     // 7. Solve Kinematic Collision with Rapier
@@ -172,7 +137,9 @@ export class CharacterController {
       // Compute movement taking walls and steps into account
       this.rapierController.computeColliderMovement(
         this.collider,
-        { x: movement.x, y: movement.y, z: movement.z }
+        { x: movement.x, y: movement.y, z: movement.z },
+        RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+        (CollisionGroup.PLAYER_CAPSULE << 16) | CollisionGroup.STATIC_GEOMETRY
       );
 
       const corrected = this.rapierController.computedMovement();
@@ -181,7 +148,7 @@ export class CharacterController {
 
       // Land event
       if (!wasGrounded && this.isGrounded) {
-        eventBus.emit('player:land', { impactSpeed: Math.abs(this.velocity.y) });
+        if (sideEffects) eventBus.emit('player:land', { impactSpeed: Math.abs(this.velocity.y) });
       }
 
       // Apply movement
@@ -206,7 +173,7 @@ export class CharacterController {
       this.position.add(movement);
 
       // Simple ground plane check at y = 1.0
-      const groundFloor = 1.0;
+      const groundFloor = ARENA_SPAWNS[0][1];
       if (this.position.y <= groundFloor) {
         this.position.y = groundFloor;
         this.velocity.y = 0;
@@ -219,8 +186,8 @@ export class CharacterController {
       }
 
       // World boundary constraints: Arena bounds [-45, 45] x [-45, 45]
-      this.position.x = THREE.MathUtils.clamp(this.position.x, -45, 45);
-      this.position.z = THREE.MathUtils.clamp(this.position.z, -45, 45);
+      this.position.x = THREE.MathUtils.clamp(this.position.x, -44, 44);
+      this.position.z = THREE.MathUtils.clamp(this.position.z, -44, 44);
     }
   }
 
@@ -256,8 +223,11 @@ export class CharacterController {
 
   public setPosition(pos: THREE.Vector3): void {
     this.position.copy(pos);
+    this.coyoteTimer = 0;
+    this.jumpCooldown = 0;
     if (this.body) {
       this.body.setTranslation({ x: pos.x, y: pos.y, z: pos.z }, true);
+      this.body.setNextKinematicTranslation({ x: pos.x, y: pos.y, z: pos.z });
     }
   }
 }
