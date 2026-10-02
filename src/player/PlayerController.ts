@@ -68,6 +68,12 @@ export class PlayerController {
     window.addEventListener('mousemove', this.onMouseMove);
 
     // Event listeners
+    // Hitmarkers and score are driven only by authoritative server confirmations.
+    eventBus.on('weapon:hit', ({ isHeadshot }) => {
+      this.score += isHeadshot ? 150 : 100;
+      soundSynth.playHitmark(isHeadshot);
+    });
+
     // Weapon hits are presentation feedback only. Damage is decided by the server.
     eventBus.on('weapon:shot', ({ weaponId, origin, directions }) => {
       this.networkManager.sendShot(weaponId as any, origin, directions);
