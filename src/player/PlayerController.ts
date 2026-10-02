@@ -68,20 +68,36 @@ export class PlayerController {
     window.addEventListener('mousemove', this.onMouseMove);
 
     // Event listeners
-    eventBus.on('weapon:hit', ({ targetId, damage, isHeadshot }) => {
-      this.score += isHeadshot ? 150 : 100;
-      this.networkManager.registerDamageToBot(
-        targetId,
-        damage,
-        isHeadshot,
-        this.weaponManager.currentWeapon.name
-      );
+    // Weapon hits are presentation feedback only. Damage is decided by the server.
+    eventBus.on('weapon:shot', ({ weaponId, origin, directions }) => {
+      this.networkManager.sendShot(weaponId as any, origin, directions);
+    });
+
+    eventBus.on('weapon:reload:start', ({ weaponId }) => {
+      this.networkManager.sendReload(weaponId as any);
+    });
+
+    eventBus.on('net:combat', (event) => {
+      if (event.targetId !== this.networkManager.clientId) {
+        if (event.shooterId === this.networkManager.clientId && event.event === 'hit') {
+          eventBus.emit('weapon:hit', {
+            targetId: event.targetId || '',
+            damage: event.damage || 0,
+            isHeadshot: !!event.headshot,
+            point: event.position || [0, 0, 0],
+            normal: [0, 1, 0],
+          });
+        }
+        return;
+      }
+
+      if (event.event === 'damage' && event.damage) {
+        this.takeDamage(event.damage, event.shooterId);
+      }
     });
 
     eventBus.on('net:killfeed', ({ killer }) => {
-      if (killer === 'You') {
-        this.kills++;
-      }
+      if (killer === 'You') this.kills++;
     });
   }
 
@@ -284,7 +300,7 @@ export class PlayerController {
     this.health = this.maxHealth;
     this.shield = this.maxShield;
     this.isDead = false;
-    this.controller.position.set(0, 2, 0);
+    this.controller.setPosition(new THREE.Vector3(0, 2, 0));
     this.controller.velocity.set(0, 0, 0);
     eventBus.emit('player:respawn', { position: [0, 2, 0] });
   }
