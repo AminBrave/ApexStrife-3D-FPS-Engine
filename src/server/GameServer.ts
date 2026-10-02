@@ -58,6 +58,12 @@ interface ServerBot {
   weaponIndex: number;
   isFiring: boolean;
   isCrouching: boolean;
+  isGrounded: boolean;
+  jumpCooldown: number;
+  lastShotAt: number;
+  targetId: string | null;
+  strafeSign: number;
+  waypoint: number;
   score: number;
   kills: number;
   deaths: number;
@@ -79,10 +85,14 @@ const MAX_SHOT_REWIND_MS = 250;
 const MAX_SHOT_DISTANCE = 300;
 const PLAYER_EYE_HEIGHT = 1.65;
 const WORLD_RECOVERY_Y = -8;
-const BODY_CENTER_HEIGHT = 0.9;
-const HEAD_HEIGHT = 1.35;
+const BODY_CENTER_HEIGHT = 0.82;
+const HEAD_HEIGHT = 1.36;
+const CROUCH_HEAD_HEIGHT = 0.96;
 const HEAD_RADIUS = 0.23;
-const BODY_RADIUS = 0.43;
+const BODY_RADIUS = 0.44;
+const BOT_SENSE_RANGE = 55;
+const BOT_FIRE_RANGE = 52;
+const BOT_SHOT_INTERVAL = 0.22;
 
 export class GameServer {
   private wss: WebSocketServer | null = null;
@@ -111,6 +121,7 @@ export class GameServer {
   public async start(): Promise<void> {
     if (this.tickInterval) return;
     await this.physics.init();
+    for (const bot of this.bots) this.physics.addCharacter(bot.id, bot.position);
     this.initialized = true;
     this.tickInterval = setInterval(() => this.tick(), 1000 / TICK_RATE);
     console.info('[GameServer] Authoritative 60Hz simulation started.');
@@ -334,7 +345,7 @@ export class GameServer {
       if (targetId === shooterId) continue;
 
       const head = raySphere(origin, direction, box.headPosition, HEAD_RADIUS);
-      const bodyCenter: [number, number, number] = [box.position[0], box.position[1] + (box.crouching ? 0.62 : BODY_CENTER_HEIGHT), box.position[2]];
+      const bodyCenter: [number, number, number] = [box.position[0], box.position[1] + (box.crouching ? 0.58 : BODY_CENTER_HEIGHT), box.position[2]];
       const body = raySphere(origin, direction, bodyCenter, BODY_RADIUS);
       const candidate = head && (!body || head.distance <= body.distance)
         ? { headshot: true, ...head }
@@ -349,6 +360,67 @@ export class GameServer {
     return best ? { targetId: best.targetId, headshot: best.headshot, position: best.position } : null;
   }
 
+  private applyDamageById(
+    shooterId: string,
+    shooterName: string,
+    targetId: string,
+    rawDamage: number,
+    headshot: boolean,
+    weaponId: WeaponId,
+    position: [number, number, number],
+  ): void {
+    const shooter = this.players.get(shooterId);
+    const targetPlayer = this.players.get(targetId);
+    const targetBot = this.bots.find(b => b.id === targetId);
+    if (!targetPlayer && !targetBot) return;
+
+    if (targetPlayer) {
+      if (targetPlayer.deadUntil > Date.now()) return;
+      let damage = Math.max(0, Math.min(rawDamage, 150));
+      const shieldDamage = Math.min(targetPlayer.shield, damage * 0.65);
+      targetPlayer.shield -= shieldDamage;
+      damage -= shieldDamage;
+      targetPlayer.health = Math.max(0, targetPlayer.health - damage);
+      this.send(targetPlayer, 'combat', { event: 'damage', shooterId, targetId, damage: rawDamage, headshot, weaponId, position });
+      if (targetPlayer.health > 0) return;
+
+      targetPlayer.deaths++;
+      if (shooter) { shooter.kills++; shooter.score += headshot ? 150 : 100; }
+      else {
+        const bot = this.bots.find(b => b.id === shooterId);
+        if (bot) { bot.kills++; bot.score += headshot ? 150 : 100; }
+      }
+      targetPlayer.deadUntil = Date.now() + 3000;
+      this.broadcast('combat', { event: 'kill', shooterId, targetId, weaponId, headshot, position });
+      this.broadcast('kill', { killer: shooterName, victim: targetPlayer.name, weapon: WEAPONS[weaponId].id, headshot });
+
+      setTimeout(() => {
+        const live = this.players.get(targetId);
+        if (!live || live.deadUntil === 0 || live.deadUntil > Date.now()) return;
+        const spawn = this.getSpawnPosition();
+        live.health = live.maxHealth;
+        live.shield = live.maxShield;
+        live.deadUntil = 0;
+        live.state.position = spawn;
+        live.state.velocity = [0, 0, 0];
+        live.state.isGrounded = true;
+        this.physics.setCharacterPosition(live.id, spawn);
+        this.send(live, 'combat', { event: 'respawn', targetId: live.id, position: spawn });
+      }, 3050);
+      return;
+    }
+
+    if (targetBot) {
+      targetBot.health = Math.max(0, targetBot.health - rawDamage);
+      if (shooter) this.send(shooter, 'combat', { event: 'hit', shooterId, targetId, damage: rawDamage, headshot, weaponId, position });
+      if (targetBot.health > 0) return;
+      targetBot.deaths++;
+      if (shooter) { shooter.kills++; shooter.score += headshot ? 150 : 100; }
+      targetBot.health = targetBot.maxHealth;
+      this.broadcast('kill', { killer: shooterName, victim: targetBot.name, weapon: weaponId, headshot });
+    }
+  }
+
   private applyDamage(
     shooter: ServerPlayer,
     targetId: string,
@@ -357,61 +429,8 @@ export class GameServer {
     weaponId: WeaponId,
     position: [number, number, number]
   ): void {
-    const targetPlayer = this.players.get(targetId);
-    const targetBot = this.bots.find(b => b.id === targetId);
-    if (!targetPlayer && !targetBot) return;
-
     this.send(shooter, 'combat', { event: 'hit', shooterId: shooter.id, targetId, damage: rawDamage, headshot, weaponId, position });
-
-    if (targetBot) {
-      targetBot.health = Math.max(0, targetBot.health - rawDamage);
-      if (targetBot.health <= 0) {
-        targetBot.deaths++;
-        shooter.kills++;
-        shooter.score += headshot ? 150 : 100;
-        targetBot.health = targetBot.maxHealth;
-        this.broadcast('kill', { killer: shooter.name, victim: targetBot.name, weapon: weaponId, headshot });
-      }
-      return;
-    }
-
-    if (!targetPlayer || targetPlayer.deadUntil > Date.now()) return;
-
-    let damage = Math.max(0, Math.min(rawDamage, 150));
-    const shieldDamage = Math.min(targetPlayer.shield, damage * 0.65);
-    targetPlayer.shield -= shieldDamage;
-    damage -= shieldDamage;
-    targetPlayer.health = Math.max(0, targetPlayer.health - damage);
-
-    this.send(targetPlayer, 'combat', { event: 'damage', shooterId: shooter.id, targetId, damage: rawDamage, headshot, weaponId, position });
-
-    if (targetPlayer.health > 0) return;
-
-    targetPlayer.deaths++;
-    shooter.kills++;
-    shooter.score += headshot ? 150 : 100;
-    targetPlayer.deadUntil = Date.now() + 3000;
-    this.broadcast('combat', { event: 'kill', shooterId: shooter.id, targetId, weaponId, headshot, position });
-    this.broadcast('kill', {
-      killer: shooter.name,
-      victim: targetPlayer.name,
-      weapon: WEAPONS[weaponId].id,
-      headshot,
-    });
-
-    setTimeout(() => {
-      const live = this.players.get(targetId);
-      if (!live || live.deadUntil === 0 || live.deadUntil > Date.now()) return;
-      const spawn = this.getSpawnPosition();
-      live.health = live.maxHealth;
-      live.shield = live.maxShield;
-      live.deadUntil = 0;
-      live.state.position = spawn;
-      live.state.velocity = [0, 0, 0];
-      live.state.isGrounded = true;
-      this.physics.setCharacterPosition(live.id, spawn);
-      this.send(live, 'combat', { event: 'respawn', targetId: live.id, position: spawn });
-    }, 3050);
+    this.applyDamageById(shooter.id, shooter.name, targetId, rawDamage, headshot, weaponId, position);
   }
 
   private updateMovement(player: ServerPlayer, input: PlayerInput): void {
@@ -496,23 +515,22 @@ export class GameServer {
 
     // Commit all kinematic transforms and refresh Rapier's broad-phase/query pipeline
     // before projectile raycasts and the next controller tick.
+    this.updateBots(now);
     this.physics.step();
-
-    this.updateBots();
     this.updateProjectiles(now);
 
     const entities = new Map<string, HistoricalHitbox>();
     for (const p of this.players.values()) {
       entities.set(p.id, {
         position: [...p.state.position],
-        headPosition: [p.state.position[0], p.state.position[1] + (p.state.isCrouching ? 0.92 : HEAD_HEIGHT), p.state.position[2]],
+        headPosition: [p.state.position[0], p.state.position[1] + (p.state.isCrouching ? CROUCH_HEAD_HEIGHT : HEAD_HEIGHT), p.state.position[2]],
         crouching: p.state.isCrouching,
       });
     }
     for (const b of this.bots) {
       entities.set(b.id, {
         position: [...b.position],
-        headPosition: [b.position[0], b.position[1] + (b.isCrouching ? 0.92 : HEAD_HEIGHT), b.position[2]],
+        headPosition: [b.position[0], b.position[1] + (b.isCrouching ? CROUCH_HEAD_HEIGHT : HEAD_HEIGHT), b.position[2]],
         crouching: b.isCrouching,
       });
     }
@@ -526,13 +544,163 @@ export class GameServer {
     }
   }
 
-  private updateBots(): void {
-    const t = this.currentTick * DT;
-    this.bots[0].position[0] = 8 + Math.sin(t * 0.9) * 6;
-    this.bots[0].velocity[0] = Math.cos(t * 0.9) * 5.4;
-    this.bots[0].yaw = Math.sin(t * 0.9) > 0 ? 0 : Math.PI;
-    this.bots[1].position[2] = -24 + Math.cos(t * 0.7) * 7;
-    this.bots[1].velocity[2] = -Math.sin(t * 0.7) * 4.9;
+  private updateBots(now: number): void {
+    const waypoints: [number, number, number][] = [
+      [-32, 1.05, -8], [-22, 1.05, 6], [-6, 1.05, 18], [10, 1.05, 18],
+      [28, 1.05, 8], [31, 1.05, -8], [20, 1.05, -12], [6, 1.05, -4],
+      [-8, 1.05, -4], [-20, 1.05, -12],
+    ];
+
+    for (const bot of this.bots) {
+      const target = this.findBotTarget(bot);
+      bot.targetId = target?.id ?? null;
+
+      let desired: [number, number, number];
+      if (target) {
+        const targetPos = target.state.position;
+        const dx = targetPos[0] - bot.position[0];
+        const dz = targetPos[2] - bot.position[2];
+        const distance = Math.hypot(dx, dz);
+        const fx = distance > 0.001 ? dx / distance : 0;
+        const fz = distance > 0.001 ? dz / distance : -1;
+        const sx = -fz * bot.strafeSign;
+        const sz = fx * bot.strafeSign;
+        const approach = distance > 18 ? 1 : distance < 11 ? -0.8 : 0.15;
+        desired = [fx * approach + sx * 0.65, 0, fz * approach + sz * 0.65];
+
+        const obstacle = this.physics.raycast(
+          [bot.position[0], bot.position[1] + 0.7, bot.position[2]],
+          [fx, 0, fz],
+          2.8
+        );
+        if (obstacle) {
+          desired = [sx, 0, sz];
+          bot.strafeSign = -bot.strafeSign;
+        }
+
+        const aimPoint: [number, number, number] = [targetPos[0], targetPos[1] + 1.25, targetPos[2]];
+        const toTarget = new THREE.Vector3(
+          aimPoint[0] - bot.position[0],
+          aimPoint[1] - (bot.position[1] + PLAYER_EYE_HEIGHT),
+          aimPoint[2] - bot.position[2]
+        );
+        bot.yaw = Math.atan2(toTarget.x, -toTarget.z);
+        bot.pitch = Math.atan2(-toTarget.y, Math.hypot(toTarget.x, toTarget.z));
+        bot.isFiring = distance <= BOT_FIRE_RANGE && this.botHasLineOfSight(bot, target);
+        if (bot.isFiring && now - bot.lastShotAt >= BOT_SHOT_INTERVAL * 1000) {
+          this.botFire(bot, target, now);
+        }
+      } else {
+        const waypoint = waypoints[bot.waypoint % waypoints.length];
+        const dx = waypoint[0] - bot.position[0];
+        const dz = waypoint[2] - bot.position[2];
+        if (Math.hypot(dx, dz) < 2) bot.waypoint = (bot.waypoint + 1) % waypoints.length;
+        const length = Math.max(0.001, Math.hypot(dx, dz));
+        desired = [dx / length, 0, dz / length];
+        bot.yaw = Math.atan2(desired[0], -desired[2]);
+        bot.isFiring = false;
+      }
+
+      const length = Math.hypot(desired[0], desired[2]);
+      const nx = length > 1 ? desired[0] / length : desired[0];
+      const nz = length > 1 ? desired[2] / length : desired[2];
+      const input = {
+        moveForward: nx * Math.sin(bot.yaw) - nz * Math.cos(bot.yaw),
+        moveRight: nx * Math.cos(bot.yaw) + nz * Math.sin(bot.yaw),
+        sprint: true,
+        crouch: bot.isCrouching,
+        yaw: bot.yaw,
+      };
+      const movementState = { velocity: bot.velocity, isGrounded: bot.isGrounded };
+      stepHorizontalVelocity(movementState, input, DT);
+
+      if (!bot.isGrounded) bot.velocity[1] = Math.max(-45, bot.velocity[1] - 24 * DT);
+      else bot.velocity[1] = -0.5;
+      bot.jumpCooldown = Math.max(0, bot.jumpCooldown - DT);
+
+      const moved = this.physics.moveCharacter(bot.id, {
+        x: bot.velocity[0] * DT,
+        y: bot.velocity[1] * DT,
+        z: bot.velocity[2] * DT,
+      } as any);
+      bot.position = [moved.position.x, moved.position.y, moved.position.z];
+      bot.isGrounded = moved.grounded;
+      if (bot.isGrounded) bot.velocity[1] = 0;
+    }
+  }
+
+  private findBotTarget(bot: ServerBot): ServerPlayer | null {
+    let best: ServerPlayer | null = null;
+    let bestDistance = BOT_SENSE_RANGE;
+    for (const player of this.players.values()) {
+      if (player.deadUntil > Date.now()) continue;
+      const dx = player.state.position[0] - bot.position[0];
+      const dy = player.state.position[1] - bot.position[1];
+      const dz = player.state.position[2] - bot.position[2];
+      const distance = Math.hypot(dx, dy, dz);
+      if (distance < bestDistance && this.botHasLineOfSight(bot, player)) {
+        best = player;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  private botHasLineOfSight(bot: ServerBot, player: ServerPlayer): boolean {
+    const origin = this.botMuzzleOrigin(bot);
+    const target: [number, number, number] = [player.state.position[0], player.state.position[1] + 1.25, player.state.position[2]];
+    const dx = target[0] - origin[0], dy = target[1] - origin[1], dz = target[2] - origin[2];
+    const distance = Math.hypot(dx, dy, dz);
+    if (distance < 0.001) return true;
+    const hit = this.physics.raycast(origin, [dx / distance, dy / distance, dz / distance], distance);
+    return !hit;
+  }
+
+  private botMuzzleOrigin(bot: ServerBot): [number, number, number] {
+    const dir = this.directionFromAim(bot.yaw, bot.pitch);
+    return [
+      bot.position[0] + dir[0] * PLAYER_MUZZLE_FORWARD,
+      bot.position[1] + PLAYER_EYE_HEIGHT + dir[1] * PLAYER_MUZZLE_FORWARD,
+      bot.position[2] + dir[2] * PLAYER_MUZZLE_FORWARD,
+    ];
+  }
+
+  private botFire(bot: ServerBot, target: ServerPlayer, now: number): void {
+    const weaponId = weaponIdFromIndex(bot.weaponIndex);
+    const weapon = WEAPONS[weaponId];
+    const origin = this.botMuzzleOrigin(bot);
+    const aimPoint: [number, number, number] = [target.state.position[0], target.state.position[1] + 1.22, target.state.position[2]];
+    const delta = new THREE.Vector3(aimPoint[0] - origin[0], aimPoint[1] - origin[1], aimPoint[2] - origin[2]).normalize();
+    bot.lastShotAt = now;
+
+    if (weapon.kind === 'projectile') {
+      const seed = this.currentTick + bot.weaponIndex * 101;
+      const [sx, sy] = deterministicSpread(seed, 0, weapon.spreadRadians);
+      const direction = this.applySpread([delta.x, delta.y, delta.z], sx, sy);
+      this.projectiles.push({
+        ownerId: bot.id,
+        position: [origin[0] + direction[0] * 0.2, origin[1] + direction[1] * 0.2, origin[2] + direction[2] * 0.2],
+        velocity: [direction[0] * (weapon.projectileSpeed || 52), direction[1] * (weapon.projectileSpeed || 52), direction[2] * (weapon.projectileSpeed || 52)],
+        damage: weapon.damage,
+        radius: weapon.splashRadius || 6.5,
+        expiresAt: now + 4000,
+      });
+      return;
+    }
+
+    const historical = this.findHistoryAt(now);
+    if (!historical) return;
+    const pellets = weapon.pelletCount ?? 1;
+    for (let i = 0; i < pellets; i++) {
+      const seed = this.currentTick + bot.weaponIndex * 101;
+      const [sx, sy] = deterministicSpread(seed, i, weapon.spreadRadians);
+      const direction = this.applySpread([delta.x, delta.y, delta.z], sx, sy);
+      const hit = this.resolveHitscan(bot.id, origin, direction, historical, weapon.damage, weapon.headshotMultiplier);
+      if (hit) {
+        const finalDamage = hit.headshot ? weapon.damage * weapon.headshotMultiplier : weapon.damage;
+        this.applyDamageById(bot.id, bot.name, hit.targetId, finalDamage, hit.headshot, weapon.id, hit.position);
+      }
+    }
   }
 
   private updateProjectiles(now: number): void {
@@ -590,9 +758,18 @@ export class GameServer {
 
   private applyDamageToEntity(ownerId: string, targetId: string, damage: number, headshot: boolean, weaponId: WeaponId): void {
     const shooter = this.players.get(ownerId);
+    const bot = this.bots.find(b => b.id === ownerId);
     const target = this.players.get(targetId);
-    if (!shooter || !target || target.deadUntil > Date.now()) return;
-    this.applyDamage(shooter, targetId, damage, headshot, weaponId, target.state.position);
+    if (!target || target.deadUntil > Date.now()) return;
+    this.applyDamageById(
+      ownerId,
+      shooter?.name ?? bot?.name ?? 'BOT',
+      targetId,
+      damage,
+      headshot,
+      weaponId,
+      target.state.position,
+    );
   }
 
   private applyDamageToBot(ownerId: string, bot: ServerBot, damage: number): void {
