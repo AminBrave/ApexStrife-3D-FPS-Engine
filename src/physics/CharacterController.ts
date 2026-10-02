@@ -221,6 +221,7 @@ export class CharacterController {
     this.position.copy(pos);
     if (this.body) {
       this.body.setTranslation({ x: pos.x, y: pos.y, z: pos.z }, true);
+      this.body.setNextKinematicTranslation({ x: pos.x, y: pos.y, z: pos.z });
     }
   }
 }
