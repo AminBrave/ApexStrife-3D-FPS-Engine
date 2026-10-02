@@ -36,6 +36,8 @@ interface ServerPlayer {
   reloadUntil: number;
   lastShotAt: number;
   deadUntil: number;
+  coyoteTimer: number;
+  jumpCooldown: number;
 }
 
 interface ServerBot {
@@ -149,6 +151,8 @@ export class GameServer {
       reloadUntil: 0,
       lastShotAt: -Infinity,
       deadUntil: 0,
+      coyoteTimer: 0,
+      jumpCooldown: 0,
     };
 
     this.players.set(id, player);
@@ -413,6 +417,18 @@ export class GameServer {
     const wishLength = Math.hypot(wishX, wishZ);
     if (wishLength > 1) { wishX /= wishLength; wishZ /= wishLength; }
 
+    if (s.isGrounded) {
+      player.coyoteTimer = 0.12;
+      const speed = Math.hypot(s.velocity[0], s.velocity[2]);
+      if (speed > 0.001) {
+        const newSpeed = Math.max(0, speed - speed * 8 * DT);
+        s.velocity[0] *= newSpeed / speed;
+        s.velocity[2] *= newSpeed / speed;
+      }
+    } else {
+      player.coyoteTimer = Math.max(0, player.coyoteTimer - DT);
+    }
+
     const currentSpeed = s.velocity[0] * wishX + s.velocity[2] * wishZ;
     const addSpeed = Math.max(0, targetSpeed - currentSpeed);
     const accel = s.isGrounded ? 14 : 2.5;
@@ -421,20 +437,17 @@ export class GameServer {
     s.velocity[2] += accelSpeed * wishZ;
 
     if (s.isGrounded) {
-      const speed = Math.hypot(s.velocity[0], s.velocity[2]);
-      if (speed > 0.001) {
-        const newSpeed = Math.max(0, speed - speed * 8 * DT);
-        s.velocity[0] *= newSpeed / speed;
-        s.velocity[2] *= newSpeed / speed;
-      }
       if (s.velocity[1] < 0) s.velocity[1] = -0.5;
     } else {
       s.velocity[1] = Math.max(-45, s.velocity[1] - 24 * DT);
     }
 
-    if (input.jump && s.isGrounded) {
+    player.jumpCooldown = Math.max(0, player.jumpCooldown - DT);
+    if (input.jump && (s.isGrounded || player.coyoteTimer > 0) && player.jumpCooldown <= 0) {
       s.velocity[1] = 9.2;
       s.isGrounded = false;
+      player.coyoteTimer = 0;
+      player.jumpCooldown = 0.2;
     }
 
     const movement = {
