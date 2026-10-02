@@ -15,6 +15,7 @@ export interface EventPayloads {
   'player:respawn': { position: [number, number, number] };
 
   // Weapon events
+  'weapon:shot': { weaponId: string; origin: [number, number, number]; directions: [number, number, number][]; };
   'weapon:fire': {
     weaponId: string;
     weaponName: string;
@@ -43,6 +44,9 @@ export interface EventPayloads {
   'net:reconciled': { errorMagnitude: number; resimulatedTicks: number };
   'net:stats': { ping: number; loss: number; fps: number; rollbackCount: number };
   'net:killfeed': { killer: string; victim: string; weapon: string; headshot: boolean };
+  'net:combat': { event: string; shooterId?: string; targetId?: string; damage?: number; headshot?: boolean; weaponId?: string; position?: [number, number, number] };
+  'net:player_join': { id: string; name: string };
+  'net:player_leave': { id: string; name: string };
 
   // Camera & FX events
   'camera:shake': { intensity: number; decay: number };
