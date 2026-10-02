@@ -46,6 +46,8 @@ export async function bootstrapGame(canvas: HTMLCanvasElement): Promise<GameInst
   // 3. Build Sci-Fi Tactical Training Arena
   const arenaBuilder = new ArenaBuilder(engine.worldScene, physicsEngine);
   arenaBuilder.build();
+  // Populate Rapier's broad-phase before the first character-controller query.
+  physicsEngine.step(1 / 60);
 
   // 4. Kinematic Character Controller
   const characterController = new CharacterController(physicsEngine);
