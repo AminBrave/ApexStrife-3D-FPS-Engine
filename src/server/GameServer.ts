@@ -418,8 +418,10 @@ export class GameServer {
 
     if (targetBot) {
       targetBot.health = Math.max(0, targetBot.health - rawDamage);
-      if (shooter) this.send(shooter, 'combat', { event: 'hit', shooterId, targetId, damage: rawDamage, headshot, weaponId, position });
-      if (targetBot.health > 0) return;
+      if (targetBot.health > 0) {
+        if (shooter) this.send(shooter, 'combat', { event: 'hit', shooterId, targetId, damage: rawDamage, headshot, weaponId, position });
+        return;
+      }
       targetBot.deaths++;
       if (shooter) { shooter.kills++; shooter.score += headshot ? 150 : 100; }
       targetBot.health = targetBot.maxHealth;
