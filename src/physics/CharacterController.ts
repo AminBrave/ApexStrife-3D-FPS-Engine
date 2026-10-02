@@ -83,7 +83,7 @@ export class CharacterController {
   /**
    * Fixed physics tick update.
    */
-  public update(fixedDeltaTime: number, input: MovementInput): void {
+  public update(fixedDeltaTime: number, input: MovementInput, sideEffects: boolean = true): void {
     // 1. Handle Crouch Transition
     this.isCrouching = input.crouch;
     this.targetEyeHeight = this.isCrouching ? 0.95 : 1.65;
@@ -158,7 +158,7 @@ export class CharacterController {
       this.isGrounded = false;
       this.coyoteTimer = 0;
       this.jumpCooldown = 0.2; // 200ms jump debounce
-      eventBus.emit('player:jump', { velocity: this.jumpSpeed });
+      if (sideEffects) eventBus.emit('player:jump', { velocity: this.jumpSpeed });
     }
 
     // 7. Solve Kinematic Collision with Rapier
@@ -181,7 +181,7 @@ export class CharacterController {
 
       // Land event
       if (!wasGrounded && this.isGrounded) {
-        eventBus.emit('player:land', { impactSpeed: Math.abs(this.velocity.y) });
+        if (sideEffects) eventBus.emit('player:land', { impactSpeed: Math.abs(this.velocity.y) });
       }
 
       // Apply movement
