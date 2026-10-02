@@ -39,6 +39,8 @@ export class FirstPersonCamera {
 
   // Procedural Head Bob
   private bobTimer: number = 0;
+  private breathingTimer: number = 0;
+  private movementBlend: number = 0;
   public bobOffset: THREE.Vector3 = new THREE.Vector3();
   public bobTilt: number = 0;
 
@@ -155,13 +157,16 @@ export class FirstPersonCamera {
     isSprinting: boolean,
     isGrounded: boolean
   ): void {
-    // 1. FOV Interpolation for ADS zoom
-    const targetFov = this.isAiming ? this.adsFov : this.baseFov;
-    this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, 14 * deltaTime);
+    // 1. Dynamic movement FOV: calm while standing, wider while moving/running.
+    this.movementBlend = THREE.MathUtils.lerp(this.movementBlend, isMoving ? 1 : 0, 8 * deltaTime);
+    const movementFov = this.movementBlend * (isSprinting ? 4.5 : 1.5);
+    const targetFov = this.isAiming ? this.adsFov : this.baseFov + movementFov;
+    this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, 10 * deltaTime);
     this.worldCamera.fov = this.currentFov;
     this.worldCamera.updateProjectionMatrix();
 
-    // 2. Procedural Head Bobbing
+    // 2. Procedural Head Bobbing + subtle idle breathing.
+    this.breathingTimer += deltaTime;
     if (isMoving && isGrounded) {
       const bobFreq = isSprinting ? 14.0 : 10.0;
       const bobAmpY = isSprinting ? 0.045 : 0.025;
@@ -176,6 +181,8 @@ export class FirstPersonCamera {
       this.bobTimer = 0;
       this.bobOffset.lerp(new THREE.Vector3(0, 0, 0), 10 * deltaTime);
       this.bobTilt = THREE.MathUtils.lerp(this.bobTilt, 0, 10 * deltaTime);
+      this.bobOffset.y += Math.sin(this.breathingTimer * 1.15) * 0.003;
+      this.bobOffset.x += Math.cos(this.breathingTimer * 0.7) * 0.002;
     }
 
     // 3. Landing Dip Spring (harmonic oscillator)
@@ -205,7 +212,8 @@ export class FirstPersonCamera {
     // Combine base pitch/yaw with camera recoil, head bob tilt, and trauma shake
     const effectivePitch = this.pitch + this.recoilPitch + shakePitch;
     const effectiveYaw = this.yaw + this.recoilYaw + shakeYaw;
-    const effectiveRoll = this.bobTilt + this.recoilRoll;
+    const breathingRoll = Math.sin(this.breathingTimer * 0.8) * 0.0015;
+    const effectiveRoll = this.bobTilt + breathingRoll + this.recoilRoll;
 
     const euler = new THREE.Euler(effectivePitch, effectiveYaw, effectiveRoll, 'YXZ');
     this.worldCamera.quaternion.setFromEuler(euler);
