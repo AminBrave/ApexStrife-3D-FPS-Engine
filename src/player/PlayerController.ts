@@ -68,6 +68,16 @@ export class PlayerController {
     window.addEventListener('mousemove', this.onMouseMove);
 
     // Event listeners
+    // Apply the server's spawn transform before prediction starts. Without this,
+    // the client can repeatedly reconcile from its old offline spawn.
+    this.networkManager.onWelcomeCallback = (welcome) => {
+      const spawn = new THREE.Vector3(...welcome.spawnPosition);
+      this.controller.setPosition(spawn);
+      this.controller.velocity.set(0, 0, 0);
+      this.controller.isGrounded = true;
+      this.statePredictor.clear();
+    };
+
     // Hitmarkers and score are driven only by authoritative server confirmations.
     eventBus.on('weapon:hit', ({ isHeadshot }) => {
       this.score += isHeadshot ? 150 : 100;
@@ -100,7 +110,10 @@ export class PlayerController {
       if (event.event === 'damage' && event.damage) {
         this.takeDamage(event.damage, event.shooterId);
       } else if (event.event === 'respawn') {
-        this.respawn();
+        const position = Array.isArray(event.position) && event.position.length === 3
+          ? new THREE.Vector3(Number(event.position[0]), Number(event.position[1]), Number(event.position[2]))
+          : new THREE.Vector3(0, 0.9, 8);
+        this.respawn(position);
       }
     });
 
@@ -304,13 +317,14 @@ export class PlayerController {
     }
   }
 
-  public respawn(): void {
+  public respawn(position: THREE.Vector3 = new THREE.Vector3(0, 0.9, 8)): void {
     this.health = this.maxHealth;
     this.shield = this.maxShield;
     this.isDead = false;
-    this.controller.setPosition(new THREE.Vector3(0, 2, 0));
+    this.controller.setPosition(position);
+    this.statePredictor.clear();
     this.controller.velocity.set(0, 0, 0);
-    eventBus.emit('player:respawn', { position: [0, 2, 0] });
+    eventBus.emit('player:respawn', { position: [position.x, position.y, position.z] });
   }
 
   public dispose(): void {
