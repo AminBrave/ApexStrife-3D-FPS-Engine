@@ -329,6 +329,7 @@ export class PlayerController {
     this.controller.setPosition(position);
     this.statePredictor.clear();
     this.controller.velocity.set(0, 0, 0);
+    this.controller.isGrounded = true;
     eventBus.emit('player:respawn', { position: [position.x, position.y, position.z] });
   }
 
