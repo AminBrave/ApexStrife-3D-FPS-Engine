@@ -114,7 +114,7 @@ export class StatePredictor {
       // 2. Re-simulate all unacknowledged inputs up to the latest sequence
       const unacknowledged = this.inputBuffer.slice(ackIdx + 1);
       for (const entry of unacknowledged) {
-        controller.update(fixedTimestep, entry.input);
+        controller.update(fixedTimestep, entry.input, false);
         // Overwrite predicted state in buffer with newly corrected simulation
         entry.predictedState.position = [controller.position.x, controller.position.y, controller.position.z];
         entry.predictedState.velocity = [controller.velocity.x, controller.velocity.y, controller.velocity.z];
