@@ -11,6 +11,7 @@ import { ARENA_SPAWNS } from '../world/ArenaDefinition';
 interface HistoricalHitbox {
   position: [number, number, number];
   headPosition: [number, number, number];
+  crouching: boolean;
 }
 
 interface HistoricalTick {
@@ -333,7 +334,7 @@ export class GameServer {
       if (targetId === shooterId) continue;
 
       const head = raySphere(origin, direction, box.headPosition, HEAD_RADIUS);
-      const bodyCenter: [number, number, number] = [box.position[0], box.position[1] + BODY_CENTER_HEIGHT, box.position[2]];
+      const bodyCenter: [number, number, number] = [box.position[0], box.position[1] + (box.crouching ? 0.62 : BODY_CENTER_HEIGHT), box.position[2]];
       const body = raySphere(origin, direction, bodyCenter, BODY_RADIUS);
       const candidate = head && (!body || head.distance <= body.distance)
         ? { headshot: true, ...head }
@@ -504,13 +505,15 @@ export class GameServer {
     for (const p of this.players.values()) {
       entities.set(p.id, {
         position: [...p.state.position],
-        headPosition: [p.state.position[0], p.state.position[1] + HEAD_HEIGHT, p.state.position[2]],
+        headPosition: [p.state.position[0], p.state.position[1] + (p.state.isCrouching ? 0.92 : HEAD_HEIGHT), p.state.position[2]],
+        crouching: p.state.isCrouching,
       });
     }
     for (const b of this.bots) {
       entities.set(b.id, {
         position: [...b.position],
-        headPosition: [b.position[0], b.position[1] + HEAD_HEIGHT, b.position[2]],
+        headPosition: [b.position[0], b.position[1] + (b.isCrouching ? 0.92 : HEAD_HEIGHT), b.position[2]],
+        crouching: b.isCrouching,
       });
     }
 
@@ -685,7 +688,7 @@ export class GameServer {
     for (const p of this.players.values()) {
       this.send(p, 'snapshot', {
         tick:this.currentTick,timestamp:now,lastAckSequence:p.lastProcessedSequence,authoritativeState:p.state,
-        health:p.health,maxHealth:p.maxHealth,weaponId:p.weaponId,ammoInMag:p.ammoInMag,ammoInReserve:p.ammoInReserve,
+        health:p.health,maxHealth:p.maxHealth,shield:p.shield,maxShield:p.maxShield,weaponId:p.weaponId,ammoInMag:p.ammoInMag,ammoInReserve:p.ammoInReserve,
         reloadUntil:p.reloadUntil,entities,
       });
     }
