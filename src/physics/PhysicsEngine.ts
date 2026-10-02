@@ -145,8 +145,9 @@ export class PhysicsEngine {
    */
   public createCharacterController(offset: number = 0.02): RAPIER.KinematicCharacterController {
     const characterController = this.world.createCharacterController(offset);
-    characterController.enableAutostep(0.4, 0.25, true); // Auto-step stairs & curbs up to 0.4m
-    characterController.enableSnapToGround(0.35); // Snap to slopes & ground
+    characterController.enableAutostep(0.4, 0.25, false); // Step only over level geometry, never other players.
+    characterController.enableSnapToGround(0.2); // Small grounding tolerance prevents hover/bounce.
+    characterController.setUp({ x: 0, y: 1, z: 0 });
     characterController.setMaxSlopeClimbAngle((45 * Math.PI) / 180); // 45 degree slope max
     characterController.setMinSlopeSlideAngle((50 * Math.PI) / 180); // Slide down steep slopes
     return characterController;
