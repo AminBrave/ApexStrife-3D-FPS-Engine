@@ -112,7 +112,7 @@ export class ServerPhysics {
       }
 
       const created = this.world.createCollider(collider, body);
-      (created as any).userData = { type: box.type };
+      (created as any).userData = { type: box.type, material: box.material };
     }
   }
 
