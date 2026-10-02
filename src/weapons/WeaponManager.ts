@@ -10,6 +10,7 @@ import { RecoilSystem, RecoilProfile } from './RecoilSystem';
 import { PhysicsEngine, CollisionGroup } from '../physics/PhysicsEngine';
 import { soundSynth } from '../audio/SoundSynthesizer';
 import { eventBus } from '../core/EventBus';
+import { SURFACE_MATERIALS, type SurfaceMaterialId } from '../world/SurfaceMaterial';
 
 export enum WeaponState {
   IDLE = 'IDLE',
@@ -386,6 +387,14 @@ export class WeaponManager {
     this.weaponMeshes.push(plGroup);
   }
 
+  public getMuzzleWorldPosition(): THREE.Vector3 {
+    const activeMesh = this.weaponMeshes[this.currentWeaponIndex];
+    if (!activeMesh) return this.viewmodelCamera.position.clone();
+    const muzzle = new THREE.Vector3(0, 0.015, -0.52);
+    activeMesh.updateMatrixWorld(true);
+    return activeMesh.localToWorld(muzzle);
+  }
+
   private showActiveWeaponMesh(): void {
     this.weaponMeshes.forEach((mesh, index) => {
       mesh.visible = index === this.currentWeaponIndex;
@@ -582,7 +591,8 @@ export class WeaponManager {
     else if (w.id === 'sniper') soundSynth.playSniper();
     else if (w.id === 'plasma') soundSynth.playPlasmaFire();
 
-    const origin = worldCamera.position.clone();
+    // Ballistics originate at the actual weapon muzzle, not the camera center.
+    const origin = this.getMuzzleWorldPosition();
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(worldCamera.quaternion);
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(worldCamera.quaternion);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(worldCamera.quaternion);
@@ -632,7 +642,9 @@ export class WeaponManager {
     this.createTracer(origin, hitPoint);
 
     if (rayResult.hit) {
-      this.createImpactSparks(hitPoint, rayResult.normal);
+      const materialId = (rayResult.userData?.material ?? 'concrete') as SurfaceMaterialId;
+      const surface = SURFACE_MATERIALS[materialId] ?? SURFACE_MATERIALS.concrete;
+      this.createImpactSparks(hitPoint, rayResult.normal, surface.sparkCount, surface.impactColor, surface.sparkSpeed);
 
       // Check if target is remote player or dummy target
       const userData = rayResult.userData;
@@ -734,7 +746,13 @@ export class WeaponManager {
     }
   }
 
-  private createImpactSparks(point: THREE.Vector3, normal: THREE.Vector3, count: number = 18, colorHex: number = 0xffaa33): void {
+  private createImpactSparks(
+    point: THREE.Vector3,
+    normal: THREE.Vector3,
+    count: number = 18,
+    colorHex: number = 0xffaa33,
+    sparkSpeed: number = 7
+  ): void {
     const countSparks = count;
     const positions = new Float32Array(countSparks * 3);
     const velocities: THREE.Vector3[] = [];
@@ -749,7 +767,7 @@ export class WeaponManager {
         normal.x + (Math.random() - 0.5) * 1.5,
         normal.y + Math.random() * 1.5,
         normal.z + (Math.random() - 0.5) * 1.5
-      ).normalize().multiplyScalar(4 + Math.random() * 8);
+      ).normalize().multiplyScalar(sparkSpeed * (0.65 + Math.random() * 0.7));
 
       velocities.push(randDir);
     }
