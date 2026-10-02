@@ -107,13 +107,19 @@ export class RemoteEntityProxy {
       return;
     }
 
-    // Find two snapshots surrounding renderTime
+    // Never extrapolate backwards. If the render clock is behind the
+    // buffered history, hold the oldest snapshot until the clock catches up.
+    if (renderTime < this.snapshots[0].timestamp) {
+      const s = this.snapshots[0].snapshot;
+      this.group.position.set(s.position[0], s.position[1], s.position[2]);
+      this.group.rotation.y = s.yaw;
+      return;
+    }
+
+    // Find two snapshots surrounding renderTime.
     let olderIdx = -1;
     for (let i = 0; i < this.snapshots.length - 1; i++) {
-      if (
-        this.snapshots[i].timestamp <= renderTime &&
-        this.snapshots[i + 1].timestamp >= renderTime
-      ) {
+      if (this.snapshots[i].timestamp <= renderTime && this.snapshots[i + 1].timestamp >= renderTime) {
         olderIdx = i;
         break;
       }
@@ -147,7 +153,7 @@ export class RemoteEntityProxy {
       // Extrapolate from newest snapshot using velocity
       const latest = this.snapshots[this.snapshots.length - 1];
       const s = latest.snapshot;
-      const dt = Math.min((renderTime - latest.timestamp) / 1000, 0.1); // Max 100ms extrapolation
+      const dt = Math.min(Math.max(0, (renderTime - latest.timestamp) / 1000), 0.1); // Max 100ms forward extrapolation
 
       this.group.position.set(
         s.position[0] + s.velocity[0] * dt,
