@@ -288,7 +288,7 @@ export class GameServer {
     if (now - player.lastShotAt < fireInterval * 0.9) return;
     if (player.ammoInMag[weapon.id] <= 0) return;
 
-    const origin = this.validatedShotOrigin(player, shot.origin);
+    const origin = this.validatedShotOrigin(player, shot.origin, shot.aimYaw!, shot.aimPitch!);
     const requestedTime = Number(shot.clientTime);
     const shotTime = Number.isFinite(requestedTime)
       ? Math.max(now - MAX_SHOT_REWIND_MS, Math.min(now, requestedTime))
@@ -345,8 +345,15 @@ export class GameServer {
       if (targetId === shooterId) continue;
 
       const head = raySphere(origin, direction, box.headPosition, HEAD_RADIUS);
-      const bodyCenter: [number, number, number] = [box.position[0], box.position[1] + (box.crouching ? 0.58 : BODY_CENTER_HEIGHT), box.position[2]];
-      const body = raySphere(origin, direction, bodyCenter, BODY_RADIUS);
+      const bodyBottom = box.position[1] + 0.18;
+      const bodyTop = box.position[1] + (box.crouching ? 0.72 : 1.12);
+      const body = rayVerticalCapsule(
+        origin,
+        direction,
+        [box.position[0], bodyBottom, box.position[2]],
+        [box.position[0], bodyTop, box.position[2]],
+        BODY_RADIUS,
+      );
       const candidate = head && (!body || head.distance <= body.distance)
         ? { headshot: true, ...head }
         : body ? { headshot: false, ...body } : null;
@@ -793,15 +800,21 @@ export class GameServer {
     return best || this.historyBuffer[0] || null;
   }
 
-  private validatedShotOrigin(player: ServerPlayer, requested: unknown): [number, number, number] {
-    const eye: [number, number, number] = [
-      player.state.position[0],
-      player.state.position[1] + PLAYER_EYE_HEIGHT,
-      player.state.position[2],
+  private validatedShotOrigin(
+    player: ServerPlayer,
+    requested: unknown,
+    aimYaw: number,
+    aimPitch: number,
+  ): [number, number, number] {
+    const direction = this.directionFromAim(aimYaw, aimPitch);
+    const expected: [number, number, number] = [
+      player.state.position[0] + direction[0] * PLAYER_MUZZLE_FORWARD,
+      player.state.position[1] + PLAYER_EYE_HEIGHT + direction[1] * PLAYER_MUZZLE_FORWARD,
+      player.state.position[2] + direction[2] * PLAYER_MUZZLE_FORWARD,
     ];
-    if (!Array.isArray(requested) || requested.length !== 3 || !requested.every(Number.isFinite)) return eye;
-    const distance = Math.hypot(requested[0] - eye[0], requested[1] - eye[1], requested[2] - eye[2]);
-    return distance <= 1.5 ? [requested[0], requested[1], requested[2]] : eye;
+    if (!Array.isArray(requested) || requested.length !== 3 || !requested.every(Number.isFinite)) return expected;
+    const distance = Math.hypot(requested[0] - expected[0], requested[1] - expected[1], requested[2] - expected[2]);
+    return distance <= 0.65 ? [requested[0], requested[1], requested[2]] : expected;
   }
 
   private directionFromAim(yaw: number, pitch: number): [number, number, number] {
@@ -880,6 +893,48 @@ export class GameServer {
   private broadcast<T>(type: string, data: T): void {
     for (const p of this.players.values()) this.send(p, type, data);
   }
+}
+
+function rayVerticalCapsule(
+  origin: [number, number, number],
+  direction: [number, number, number],
+  a: [number, number, number],
+  b: [number, number, number],
+  radius: number,
+): { distance: number; position: [number, number, number] } | null {
+  const hits: number[] = [];
+  const ox = origin[0] - a[0], oz = origin[2] - a[2];
+  const dx = direction[0], dz = direction[2];
+  const aa = dx * dx + dz * dz;
+  const bb = 2 * (ox * dx + oz * dz);
+  const cc = ox * ox + oz * oz - radius * radius;
+  if (aa > 1e-8) {
+    const disc = bb * bb - 4 * aa * cc;
+    if (disc >= 0) {
+      const root = Math.sqrt(disc);
+      for (const t of [(-bb - root) / (2 * aa), (-bb + root) / (2 * aa)]) {
+        if (t >= 0) {
+          const y = origin[1] + direction[1] * t;
+          if (y >= a[1] && y <= b[1]) hits.push(t);
+        }
+      }
+    }
+  }
+
+  const bottom = raySphere(origin, direction, a, radius);
+  const top = raySphere(origin, direction, b, radius);
+  if (bottom) hits.push(bottom.distance);
+  if (top) hits.push(top.distance);
+  if (!hits.length) return null;
+  const distance = Math.min(...hits);
+  return {
+    distance,
+    position: [
+      origin[0] + direction[0] * distance,
+      origin[1] + direction[1] * distance,
+      origin[2] + direction[2] * distance,
+    ],
+  };
 }
 
 function raySphere(
