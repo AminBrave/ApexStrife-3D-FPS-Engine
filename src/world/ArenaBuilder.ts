@@ -281,14 +281,16 @@ export class ArenaBuilder {
       new THREE.Vector3(pos.x, pos.y + 1.35, pos.z),
       new THREE.Vector3(0.25, 0.35, 0.1),
       undefined,
-      { id: name, type: 'dummy', part: 'body' }
+      { id: name, type: 'dummy', part: 'body' },
+      { sensor: true }
     );
 
     this.physicsEngine.createStaticBox(
       new THREE.Vector3(pos.x, pos.y + 1.85, pos.z),
       new THREE.Vector3(0.18, 0.18, 0.18),
       undefined,
-      { id: name, type: 'dummy', part: 'head' }
+      { id: name, type: 'dummy', part: 'head' },
+      { sensor: true }
     );
   }
 }
