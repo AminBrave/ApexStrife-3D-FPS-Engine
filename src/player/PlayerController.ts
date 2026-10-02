@@ -12,6 +12,7 @@ import { StatePredictor, PlayerInput, PlayerState } from '../netcode/StatePredic
 import { NetworkManager } from '../netcode/NetworkManager';
 import { eventBus } from '../core/EventBus';
 import { soundSynth } from '../audio/SoundSynthesizer';
+import { ARENA_SPAWNS } from '../world/ArenaDefinition';
 
 export class PlayerController {
   public controller: CharacterController;
@@ -25,6 +26,7 @@ export class PlayerController {
   private mouseLeftDown: boolean = false;
   private mouseRightDown: boolean = false;
   private inputSequence: number = 0;
+  private jumpWasDown: boolean = false;
 
   // Player Stats
   public health: number = 100;
@@ -194,7 +196,10 @@ export class PlayerController {
     if (this.keys['KeyD'] || this.keys['ArrowRight']) right += 1;
     if (this.keys['KeyA'] || this.keys['ArrowLeft']) right -= 1;
 
-    const jump = !!this.keys['Space'];
+    const jumpDown = !!this.keys['Space'];
+    // Jump is edge-triggered. Holding Space must not auto-jump every cooldown.
+    const jump = jumpDown && !this.jumpWasDown;
+    this.jumpWasDown = jumpDown;
     const sprint = !!this.keys['ShiftLeft'] || !!this.keys['ShiftRight'];
     const crouch = !!this.keys['KeyC'] || !!this.keys['ControlLeft'];
 
@@ -317,7 +322,7 @@ export class PlayerController {
     }
   }
 
-  public respawn(position: THREE.Vector3 = new THREE.Vector3(0, 0.9, 8)): void {
+  public respawn(position: THREE.Vector3 = new THREE.Vector3(...ARENA_SPAWNS[0])): void {
     this.health = this.maxHealth;
     this.shield = this.maxShield;
     this.isDead = false;
