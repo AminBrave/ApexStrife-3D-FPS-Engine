@@ -5,6 +5,7 @@ import type { EntitySnapshot } from '../netcode/Interpolator';
 import type { ShotCommand, ReloadCommand } from '../netcode/Protocol';
 import { WEAPONS, weaponIdFromIndex, type WeaponId } from '../gameplay/WeaponDefinitions';
 import { stepHorizontalVelocity } from '../gameplay/MovementSimulation';
+import { ARENA_SPAWNS } from '../world/ArenaDefinition';
 
 interface HistoricalHitbox {
   position: [number, number, number];
@@ -39,6 +40,7 @@ interface ServerPlayer {
   deadUntil: number;
   coyoteTimer: number;
   jumpCooldown: number;
+  jumpWasDown: boolean;
 }
 
 interface ServerBot {
@@ -157,6 +159,7 @@ export class GameServer {
       deadUntil: 0,
       coyoteTimer: 0,
       jumpCooldown: 0,
+      jumpWasDown: false,
     };
 
     this.players.set(id, player);
@@ -422,7 +425,9 @@ export class GameServer {
     }
 
     player.jumpCooldown = Math.max(0, player.jumpCooldown - DT);
-    if (input.jump && (s.isGrounded || player.coyoteTimer > 0) && player.jumpCooldown <= 0) {
+    const jumpPressed = input.jump && !player.jumpWasDown;
+    player.jumpWasDown = input.jump;
+    if (jumpPressed && (s.isGrounded || player.coyoteTimer > 0) && player.jumpCooldown <= 0) {
       s.velocity[1] = 9.2;
       s.isGrounded = false;
       player.coyoteTimer = 0;
@@ -436,7 +441,12 @@ export class GameServer {
     };
     const moved = this.physics.moveCharacter(player.id, movement as any);
 
-    if (moved.position.y < WORLD_RECOVERY_Y) {
+    const outsideWorld = !Number.isFinite(moved.position.x) || !Number.isFinite(moved.position.y) || !Number.isFinite(moved.position.z)
+      || moved.position.y < WORLD_RECOVERY_Y
+      || Math.abs(moved.position.x) > 48
+      || Math.abs(moved.position.z) > 48;
+
+    if (outsideWorld) {
       const recovery = this.getSpawnPosition();
       this.physics.setCharacterPosition(player.id, recovery);
       s.position = recovery;
@@ -473,6 +483,10 @@ export class GameServer {
         player.reloadUntil = 0;
       }
     }
+
+    // Commit all kinematic transforms and refresh Rapier's broad-phase/query pipeline
+    // before projectile raycasts and the next controller tick.
+    this.physics.step();
 
     this.updateBots();
     this.updateProjectiles(now);
@@ -609,8 +623,7 @@ export class GameServer {
 
   private getSpawnPosition(): [number, number, number] {
     const n = this.players.size % 6;
-    const spawns: [number,number,number][] = [[0,SAFE_SPAWN_Y,8],[8,SAFE_SPAWN_Y,8],[-8,SAFE_SPAWN_Y,8],[0,SAFE_SPAWN_Y,-2],[12,4.9,-25],[-12,SAFE_SPAWN_Y,-2]];
-    return spawns[n];
+    return ARENA_SPAWNS[n];
   }
 
   private initBots(): void {
