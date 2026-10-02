@@ -198,6 +198,7 @@ export class WeaponManager {
   private fireTimer: number = 0;
   private stateTimer: number = 0;
   private isTriggerHeld: boolean = false;
+  private movementTimer: number = 0;
 
   // Visual effects
   private worldScene: THREE.Scene;
@@ -527,7 +528,8 @@ export class WeaponManager {
       }
     }
 
-    // Animate active viewmodel
+    // Animate active viewmodel with layered breathing, movement bob, mouse sway and recoil.
+    this.movementTimer += deltaTime * (isMoving ? 9.5 : 1.4);
     const activeMesh = this.weaponMeshes[this.currentWeaponIndex];
     if (activeMesh) {
       const targetBasePos = this.isAiming ? w.adsPos : w.hipPos;
@@ -536,18 +538,23 @@ export class WeaponManager {
       const swayX = -mouseDeltaX * 0.00008;
       const swayY = mouseDeltaY * 0.00008;
 
-      // Desired position = targetBasePos + recoil + sway
+      const bobStrength = isMoving ? 1 : 0.25;
+      const bobX = Math.cos(this.movementTimer * 0.5) * 0.012 * bobStrength;
+      const bobY = Math.abs(Math.sin(this.movementTimer)) * 0.014 * bobStrength;
+      const breatheX = Math.cos(this.movementTimer * 0.37) * 0.002;
+      const breatheY = Math.sin(this.movementTimer * 0.31) * 0.0025;
+
+      // Desired position = base + recoil + input sway + locomotion bob.
       const targetPos = new THREE.Vector3(
-        targetBasePos.x + this.recoilSystem.weaponPosOffset.x + swayX,
-        targetBasePos.y + this.recoilSystem.weaponPosOffset.y + swayY,
-        targetBasePos.z + this.recoilSystem.weaponPosOffset.z
+        targetBasePos.x + this.recoilSystem.weaponPosOffset.x + swayX + bobX + breatheX,
+        targetBasePos.y + this.recoilSystem.weaponPosOffset.y + swayY + bobY + breatheY,
+        targetBasePos.z + this.recoilSystem.weaponPosOffset.z + Math.sin(this.movementTimer * 0.5) * 0.006 * bobStrength
       );
 
-      // Desired rotation = recoil + sway
       const targetRot = new THREE.Euler(
-        this.recoilSystem.weaponRotOffset.x + swayY * 1.5,
-        this.recoilSystem.weaponRotOffset.y + swayX * 1.5,
-        this.recoilSystem.weaponRotOffset.z,
+        this.recoilSystem.weaponRotOffset.x + swayY * 1.5 + Math.sin(this.movementTimer) * 0.012 * bobStrength,
+        this.recoilSystem.weaponRotOffset.y + swayX * 1.5 + Math.cos(this.movementTimer * 0.5) * 0.009 * bobStrength,
+        this.recoilSystem.weaponRotOffset.z + Math.cos(this.movementTimer * 0.5) * 0.018 * bobStrength,
         'YXZ'
       );
 
