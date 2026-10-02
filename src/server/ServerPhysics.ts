@@ -57,7 +57,7 @@ export class ServerPhysics {
     c.controller.computeColliderMovement(
       c.collider,
       { x: movement.x, y: movement.y, z: movement.z },
-      undefined,
+      this.rapier.QueryFilterFlags.EXCLUDE_SENSORS,
       (CollisionGroup.PLAYER_CAPSULE << 16) | CollisionGroup.STATIC_GEOMETRY
     );
     const corrected = c.controller.computedMovement();
