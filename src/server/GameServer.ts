@@ -4,6 +4,7 @@ import { PlayerInput, PlayerState } from '../netcode/StatePredictor';
 import type { EntitySnapshot } from '../netcode/Interpolator';
 import type { ShotCommand, ReloadCommand } from '../netcode/Protocol';
 import { WEAPONS, weaponIdFromIndex, type WeaponId } from '../gameplay/WeaponDefinitions';
+import { stepHorizontalVelocity } from '../gameplay/MovementSimulation';
 
 interface HistoricalHitbox {
   position: [number, number, number];
@@ -406,35 +407,10 @@ export class GameServer {
 
     if (player.deadUntil > Date.now()) return;
 
-    const crouching = input.crouch;
-    const sprinting = input.sprint && input.moveForward > 0 && !crouching;
-    const targetSpeed = crouching ? 3.5 : sprinting ? 11.5 : 7.0;
+    if (s.isGrounded) player.coyoteTimer = 0.12;
+    else player.coyoteTimer = Math.max(0, player.coyoteTimer - DT);
 
-    const sin = Math.sin(input.yaw);
-    const cos = Math.cos(input.yaw);
-    let wishX = sin * input.moveForward + cos * input.moveRight;
-    let wishZ = -cos * input.moveForward + sin * input.moveRight;
-    const wishLength = Math.hypot(wishX, wishZ);
-    if (wishLength > 1) { wishX /= wishLength; wishZ /= wishLength; }
-
-    if (s.isGrounded) {
-      player.coyoteTimer = 0.12;
-      const speed = Math.hypot(s.velocity[0], s.velocity[2]);
-      if (speed > 0.001) {
-        const newSpeed = Math.max(0, speed - speed * 8 * DT);
-        s.velocity[0] *= newSpeed / speed;
-        s.velocity[2] *= newSpeed / speed;
-      }
-    } else {
-      player.coyoteTimer = Math.max(0, player.coyoteTimer - DT);
-    }
-
-    const currentSpeed = s.velocity[0] * wishX + s.velocity[2] * wishZ;
-    const addSpeed = Math.max(0, targetSpeed - currentSpeed);
-    const accel = s.isGrounded ? 14 : 2.5;
-    const accelSpeed = Math.min(accel * DT * targetSpeed, addSpeed);
-    s.velocity[0] += accelSpeed * wishX;
-    s.velocity[2] += accelSpeed * wishZ;
+    stepHorizontalVelocity(s, input, DT);
 
     if (s.isGrounded) {
       if (s.velocity[1] < 0) s.velocity[1] = -0.5;
