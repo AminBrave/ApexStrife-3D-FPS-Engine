@@ -29,12 +29,14 @@ export class ServerPhysics {
     );
     const collider = this.world.createCollider(
       this.rapier.ColliderDesc.capsule(0.55, 0.35)
-        .setCollisionGroups((CollisionGroup.PLAYER_CAPSULE << 16) | (CollisionGroup.STATIC_GEOMETRY | CollisionGroup.PLAYER_CAPSULE)),
+          // Characters collide with level geometry, not other players.
+        .setCollisionGroups((CollisionGroup.PLAYER_CAPSULE << 16) | CollisionGroup.STATIC_GEOMETRY),
       body
     );
     const controller = this.world.createCharacterController(0.015);
-    controller.enableAutostep(0.4, 0.25, true);
-    controller.enableSnapToGround(0.35);
+    controller.enableAutostep(0.4, 0.25, false);
+    controller.setUp({ x: 0, y: 1, z: 0 });
+    controller.enableSnapToGround(0.2);
     controller.setMaxSlopeClimbAngle(Math.PI / 4);
     controller.setMinSlopeSlideAngle(50 * Math.PI / 180);
     const character = { body, collider, controller, position: new THREE.Vector3(...position) };
@@ -52,13 +54,17 @@ export class ServerPhysics {
   public moveCharacter(id: string, movement: THREE.Vector3): { position: THREE.Vector3; grounded: boolean } {
     const c = this.characters.get(id);
     if (!c) throw new Error(`Missing server character: ${id}`);
-    c.controller.computeColliderMovement(c.collider, { x: movement.x, y: movement.y, z: movement.z });
+    c.controller.computeColliderMovement(
+      c.collider,
+      { x: movement.x, y: movement.y, z: movement.z },
+      undefined,
+      (CollisionGroup.PLAYER_CAPSULE << 16) | CollisionGroup.STATIC_GEOMETRY
+    );
     const corrected = c.controller.computedMovement();
     const grounded = c.controller.computedGrounded();
     const next = c.position.clone().add(corrected);
-    // The authoritative server does not rely on a separate physics integration
-    // step for kinematic movement. Keep the body transform synchronized immediately
-    // so the next character-controller query starts from the position we just solved.
+    // Apply the corrected transform immediately and queue the same transform for
+    // Rapier's next step so the query pipeline and authoritative state stay aligned.
     c.position.copy(next);
     c.body.setTranslation({ x: next.x, y: next.y, z: next.z }, true);
     c.body.setNextKinematicTranslation({ x: next.x, y: next.y, z: next.z });
