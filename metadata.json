@@ -1,0 +1,6 @@
+{
+  "name": "ApexStrife 3D FPS Engine",
+  "description": "Production-ready 3D browser first-person shooter with Rapier3D physics, dual-camera viewmodels, client prediction, reconciliation, recoil mechanics, and multiplayer netcode.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
