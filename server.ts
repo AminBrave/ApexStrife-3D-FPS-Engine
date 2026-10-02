@@ -24,7 +24,7 @@ async function startServer() {
   // 1. Mount Authoritative WebSocket Game Server
   const wss = new WebSocketServer({ server, path: '/ws' });
   const gameServer = new GameServer(wss);
-  gameServer.start();
+  await gameServer.start();
 
   // 2. Health check endpoint
   app.get('/api/health', (req, res) => {
