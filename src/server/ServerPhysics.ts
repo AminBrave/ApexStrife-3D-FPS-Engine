@@ -1,6 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import { CollisionGroup } from '../physics/PhysicsEngine';
+import { ARENA_BOXES } from '../world/ArenaDefinition';
 
 export interface ServerCharacter {
   body: RAPIER.RigidBody;
@@ -87,35 +88,24 @@ export class ServerPhysics {
   }
 
   private buildArena(): void {
-    const addBox = (position: [number, number, number], half: [number, number, number], rotation?: RAPIER.Rotation) => {
-      const body = this.world.createRigidBody(this.rapier.RigidBodyDesc.fixed().setTranslation(...position));
-      const collider = this.rapier.ColliderDesc.cuboid(...half)
+    for (const box of ARENA_BOXES) {
+      const body = this.world.createRigidBody(
+        this.rapier.RigidBodyDesc.fixed().setTranslation(...box.position)
+      );
+
+      let collider = this.rapier.ColliderDesc.cuboid(...box.halfExtents)
         .setCollisionGroups((CollisionGroup.STATIC_GEOMETRY << 16) | 0xffff);
-      if (rotation) collider.setRotation(rotation);
-      this.world.createCollider(collider, body);
-    };
 
-    addBox([0, -1, 0], [45, 1, 45]);
-    addBox([0, 6, -45], [45, 6, 1]);
-    addBox([0, 6, 45], [45, 6, 1]);
-    addBox([-45, 6, 0], [1, 6, 45]);
-    addBox([45, 6, 0], [1, 6, 45]);
+      if (box.rotationX || box.rotationY) {
+        const q = new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(box.rotationX || 0, box.rotationY || 0, 0)
+        );
+        collider = collider.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w });
+      }
 
-    addBox([12, 4, -25], [7, 0.3, 6]);
-    for (const p of [[6,2,-19],[18,2,-19],[6,2,-31],[18,2,-31]] as [number,number,number][]) addBox(p, [0.4,2,0.4]);
-
-    const crates: [number,number,number,number,number,number,number][] = [
-      [0,1,-10,1.6,1,0.6,0.1],[-4.5,0.75,-12,1,0.75,1,0.35],[5,0.75,-8,1.1,0.75,1.1,-0.2],
-      [-14,1.2,-18,2,1.2,0.8,0.4],[-18,0.8,-24,1.25,0.8,1.25,0],
-      [18,1,-5,1.5,1,0.75,-0.3],[22,1.4,-14,2.1,1.4,0.9,0.2],
-      [-8,1.2,10,1.75,1.2,0.75,0],[8,1.2,10,1.75,1.2,0.75,0],
-    ];
-    for (const [x,y,z,hx,hy,hz,ry] of crates) {
-      addBox([x,y,z],[hx,hy,hz], { x: 0, y: Math.sin(ry / 2), z: 0, w: Math.cos(ry / 2) });
+      const created = this.world.createCollider(collider, body);
+      (created as any).userData = { type: box.type };
     }
-
-    const rampAngle = -25 * Math.PI / 180;
-    addBox([12,2,-14.5],[2,0.25,4.75], { x: Math.sin(rampAngle / 2), y: 0, z: 0, w: Math.cos(rampAngle / 2) });
   }
 
   public dispose(): void {
