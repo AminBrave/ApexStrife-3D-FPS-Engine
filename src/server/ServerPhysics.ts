@@ -21,6 +21,8 @@ export class ServerPhysics {
     this.world = new RAPIER.World({ x: 0, y: -24, z: 0 });
     this.world.integrationParameters.numSolverIterations = 4;
     this.buildArena();
+    // Static colliders must be present in the query pipeline before the first player move.
+    this.world.step();
   }
 
   public addCharacter(id: string, position: [number, number, number]): ServerCharacter {
