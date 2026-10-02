@@ -6,9 +6,10 @@
 
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { PhysicsEngine } from './PhysicsEngine';
+import { PhysicsEngine, CollisionGroup } from './PhysicsEngine';
 import { eventBus } from '../core/EventBus';
 import { stepHorizontalVelocity } from '../gameplay/MovementSimulation';
+import { ARENA_SPAWNS } from '../world/ArenaDefinition';
 
 export interface MovementInput {
   moveForward: number; // -1 to +1
@@ -20,9 +21,9 @@ export interface MovementInput {
 }
 
 export class CharacterController {
-  public position: THREE.Vector3 = new THREE.Vector3(0, 2, 0);
+  public position: THREE.Vector3 = new THREE.Vector3(...ARENA_SPAWNS[0]);
   public velocity: THREE.Vector3 = new THREE.Vector3();
-  public isGrounded: boolean = false;
+  public isGrounded: boolean = true;
   public isCrouching: boolean = false;
   public isSprinting: boolean = false;
 
@@ -56,12 +57,13 @@ export class CharacterController {
   public collider: RAPIER.Collider | null = null;
   private rapierController: RAPIER.KinematicCharacterController | null = null;
 
-  constructor(physicsEngine: PhysicsEngine, startPosition: THREE.Vector3 = new THREE.Vector3(0, 2, 0)) {
+  constructor(physicsEngine: PhysicsEngine, startPosition: THREE.Vector3 = new THREE.Vector3(...ARENA_SPAWNS[0])) {
     this.physicsEngine = physicsEngine;
     this.position.copy(startPosition);
 
     if (physicsEngine.isReady) {
       this.initPhysics();
+      this.isGrounded = true;
     }
   }
 
@@ -135,7 +137,9 @@ export class CharacterController {
       // Compute movement taking walls and steps into account
       this.rapierController.computeColliderMovement(
         this.collider,
-        { x: movement.x, y: movement.y, z: movement.z }
+        { x: movement.x, y: movement.y, z: movement.z },
+        undefined,
+        (CollisionGroup.PLAYER_CAPSULE << 16) | CollisionGroup.STATIC_GEOMETRY
       );
 
       const corrected = this.rapierController.computedMovement();
