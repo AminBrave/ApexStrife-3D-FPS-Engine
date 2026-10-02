@@ -16,6 +16,7 @@ export interface EventPayloads {
 
   // Weapon events
   'weapon:shot': { weaponId: string; origin: [number, number, number]; directions: [number, number, number][]; };
+  'weapon:impact': { point: [number, number, number]; normal: [number, number, number] };
   'weapon:fire': {
     weaponId: string;
     weaponName: string;
