@@ -138,7 +138,7 @@ export class CharacterController {
       this.rapierController.computeColliderMovement(
         this.collider,
         { x: movement.x, y: movement.y, z: movement.z },
-        undefined,
+        RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
         (CollisionGroup.PLAYER_CAPSULE << 16) | CollisionGroup.STATIC_GEOMETRY
       );
 
