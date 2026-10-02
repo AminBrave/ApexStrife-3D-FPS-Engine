@@ -6,6 +6,7 @@ export interface ServerCharacter {
   body: RAPIER.RigidBody;
   collider: RAPIER.Collider;
   controller: RAPIER.KinematicCharacterController;
+  position: THREE.Vector3;
 }
 
 export class ServerPhysics {
@@ -35,7 +36,7 @@ export class ServerPhysics {
     controller.enableSnapToGround(0.35);
     controller.setMaxSlopeClimbAngle(Math.PI / 4);
     controller.setMinSlopeSlideAngle(50 * Math.PI / 180);
-    const character = { body, collider, controller };
+    const character = { body, collider, controller, position: new THREE.Vector3(...position) };
     this.characters.set(id, character);
     return character;
   }
@@ -53,8 +54,12 @@ export class ServerPhysics {
     c.controller.computeColliderMovement(c.collider, { x: movement.x, y: movement.y, z: movement.z });
     const corrected = c.controller.computedMovement();
     const grounded = c.controller.computedGrounded();
-    const t = c.body.translation();
-    const next = new THREE.Vector3(t.x + corrected.x, t.y + corrected.y, t.z + corrected.z);
+    const next = c.position.clone().add(corrected);
+    // The authoritative server does not rely on a separate physics integration
+    // step for kinematic movement. Keep the body transform synchronized immediately
+    // so the next character-controller query starts from the position we just solved.
+    c.position.copy(next);
+    c.body.setTranslation({ x: next.x, y: next.y, z: next.z }, true);
     c.body.setNextKinematicTranslation({ x: next.x, y: next.y, z: next.z });
     return { position: next, grounded };
   }
@@ -62,7 +67,9 @@ export class ServerPhysics {
   public setCharacterPosition(id: string, position: [number, number, number]): void {
     const c = this.characters.get(id);
     if (!c) return;
+    c.position.set(position[0], position[1], position[2]);
     c.body.setTranslation({ x: position[0], y: position[1], z: position[2] }, true);
+    c.body.setNextKinematicTranslation({ x: position[0], y: position[1], z: position[2] });
   }
 
   public step(): void {
