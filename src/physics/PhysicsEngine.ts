@@ -115,7 +115,8 @@ export class PhysicsEngine {
     position: THREE.Vector3,
     halfExtents: THREE.Vector3,
     quaternion: THREE.Quaternion = new THREE.Quaternion(),
-    userData?: any
+    userData?: any,
+    options: { sensor?: boolean } = {}
   ): { body: RAPIER.RigidBody; collider: RAPIER.Collider } {
     const bodyDesc = this.rapier.RigidBodyDesc.fixed()
       .setTranslation(position.x, position.y, position.z)
@@ -128,7 +129,7 @@ export class PhysicsEngine {
       .setFriction(0.6)
       .setRestitution(0.0);
 
-    const collider = this.world.createCollider(colliderDesc, body);
+    const collider = this.world.createCollider(colliderDesc.setSensor(!!options.sensor), body);
     if (userData) {
       (collider as any).userData = userData;
     }
@@ -166,7 +167,8 @@ export class PhysicsEngine {
     const body = this.world.createRigidBody(bodyDesc);
 
     const colliderDesc = this.rapier.ColliderDesc.capsule(halfHeight, radius)
-      .setCollisionGroups((CollisionGroup.PLAYER_CAPSULE << 16) | (CollisionGroup.STATIC_GEOMETRY | CollisionGroup.PLAYER_CAPSULE))
+      // Character controllers query only static level geometry. Players are not movement obstacles.
+      .setCollisionGroups((CollisionGroup.PLAYER_CAPSULE << 16) | CollisionGroup.STATIC_GEOMETRY)
       .setFriction(0.0)
       .setRestitution(0.0);
 
