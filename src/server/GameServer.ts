@@ -337,6 +337,23 @@ export class GameServer {
     position: [number, number, number]
   ): void {
     const targetPlayer = this.players.get(targetId);
+    const targetBot = this.bots.find(b => b.id === targetId);
+    if (!targetPlayer && !targetBot) return;
+
+    this.send(shooter, 'combat', { event: 'hit', shooterId: shooter.id, targetId, damage: rawDamage, headshot, weaponId, position });
+
+    if (targetBot) {
+      targetBot.health = Math.max(0, targetBot.health - rawDamage);
+      if (targetBot.health <= 0) {
+        targetBot.deaths++;
+        shooter.kills++;
+        shooter.score += headshot ? 150 : 100;
+        targetBot.health = targetBot.maxHealth;
+        this.broadcast('kill', { killer: shooter.name, victim: targetBot.name, weapon: weaponId, headshot });
+      }
+      return;
+    }
+
     if (!targetPlayer || targetPlayer.deadUntil > Date.now()) return;
 
     let damage = Math.max(0, Math.min(rawDamage, 150));
@@ -345,7 +362,6 @@ export class GameServer {
     damage -= shieldDamage;
     targetPlayer.health = Math.max(0, targetPlayer.health - damage);
 
-    this.send(shooter, 'combat', { event: 'hit', shooterId: shooter.id, targetId, damage: rawDamage, headshot, weaponId, position });
     this.send(targetPlayer, 'combat', { event: 'damage', shooterId: shooter.id, targetId, damage: rawDamage, headshot, weaponId, position });
 
     if (targetPlayer.health > 0) return;
