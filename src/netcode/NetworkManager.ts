@@ -93,12 +93,14 @@ export class NetworkManager {
     this.send('input', input);
   }
 
-  public sendShot(weaponId: WeaponId, origin: [number, number, number], directions: [number, number, number][]): void {
+  public sendShot(weaponId: WeaponId, origin: [number, number, number], directions: [number, number, number][], aimYaw: number, aimPitch: number): void {
     const payload: ShotCommand = {
       sequence: ++this.shotSequence,
       weaponId,
       origin,
       directions,
+      aimYaw,
+      aimPitch,
       clientTime: this.getServerTime(),
     };
     this.send('shot', payload);
@@ -180,6 +182,10 @@ export class NetworkManager {
       authoritativeState: localState,
       health: 100,
       maxHealth: 100,
+      weaponId: 'ar',
+      ammoInMag: { ar: 30, shotgun: 8, sniper: 5, plasma: 4 },
+      ammoInReserve: { ar: 180, shotgun: 48, sniper: 25, plasma: 16 },
+      reloadUntil: 0,
       entities: [],
     });
   }
