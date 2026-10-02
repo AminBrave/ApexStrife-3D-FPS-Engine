@@ -27,6 +27,10 @@ function state(grounded = true) {
 
 assert.equal(ARENA_BOXES[0].type, 'ground');
 assert.equal(ARENA_BOXES[0].position[1] + ARENA_BOXES[0].halfExtents[1], ARENA_FLOOR_TOP, 'arena floor top must be y=0');
+const platform = ARENA_BOXES.find(box => box.type === 'platform');
+assert(platform, 'arena must contain the elevated platform');
+const platformTop = platform.position[1] + platform.halfExtents[1];
+assert(ARENA_SPAWNS[4][1] > platformTop + 0.85, 'elevated spawn must place the capsule above the platform');
 for (const spawn of ARENA_SPAWNS) {
   assert(spawn[1] > ARENA_FLOOR_TOP, 'every spawn must place the capsule above the floor');
   assert(Math.abs(spawn[0]) < 44 && Math.abs(spawn[2]) < 44, 'every spawn must be inside the perimeter');
