@@ -104,11 +104,11 @@ export class ServerPhysics {
       [-8,1.2,10,1.75,1.2,0.75,0],[8,1.2,10,1.75,1.2,0.75,0],
     ];
     for (const [x,y,z,hx,hy,hz,ry] of crates) {
-      addBox([x,y,z],[hx,hy,hz], new this.rapier.Rotation(0, Math.sin(ry/2), 0, Math.cos(ry/2)));
+      addBox([x,y,z],[hx,hy,hz], { x: 0, y: Math.sin(ry / 2), z: 0, w: Math.cos(ry / 2) });
     }
 
     const rampAngle = -25 * Math.PI / 180;
-    addBox([12,2,-14.5],[2,0.25,4.75], new this.rapier.Rotation(Math.sin(rampAngle/2),0,0,Math.cos(rampAngle/2)));
+    addBox([12,2,-14.5],[2,0.25,4.75], { x: Math.sin(rampAngle / 2), y: 0, z: 0, w: Math.cos(rampAngle / 2) });
   }
 
   public dispose(): void {
