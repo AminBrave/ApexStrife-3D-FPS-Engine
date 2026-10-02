@@ -587,17 +587,27 @@ export class WeaponManager {
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(worldCamera.quaternion);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(worldCamera.quaternion);
 
-    // Firing logic
+    // Client performs presentation/local prediction only. The server receives the
+    // exact shot directions and independently validates ammo, cadence, and damage.
+    const shotDirections: [number, number, number][] = [];
     if (w.type === 'hitscan') {
       const pelletCount = w.pelletCount ?? 1;
       for (let i = 0; i < pelletCount; i++) {
         const spreadDir = this.recoilSystem.applySpreadToDirection(forward, up, right);
+        shotDirections.push([spreadDir.x, spreadDir.y, spreadDir.z]);
         this.performHitscanRay(origin, spreadDir, w);
       }
-    } else if (w.type === 'projectile') {
+    } else {
       const spreadDir = this.recoilSystem.applySpreadToDirection(forward, up, right);
+      shotDirections.push([spreadDir.x, spreadDir.y, spreadDir.z]);
       this.spawnPlasmaProjectile(origin, spreadDir, w);
     }
+
+    eventBus.emit('weapon:shot', {
+      weaponId: w.id,
+      origin: [origin.x, origin.y, origin.z],
+      directions: shotDirections,
+    });
 
     eventBus.emit('weapon:fire', {
       weaponId: w.id,
