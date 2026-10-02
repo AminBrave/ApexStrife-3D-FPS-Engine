@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { WebSocket, WebSocketServer } from 'ws';
 import { ServerPhysics } from './ServerPhysics';
 import { PlayerInput, PlayerState } from '../netcode/StatePredictor';
