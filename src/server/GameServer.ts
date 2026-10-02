@@ -42,6 +42,7 @@ interface ServerPlayer {
   coyoteTimer: number;
   jumpCooldown: number;
   jumpWasDown: boolean;
+  lastShotSequence: number;
 }
 
 interface ServerBot {
@@ -159,6 +160,7 @@ export class GameServer {
       coyoteTimer: 0,
       jumpCooldown: 0,
       jumpWasDown: false,
+      lastShotSequence: 0,
     };
 
     this.players.set(id, player);
@@ -260,6 +262,7 @@ export class GameServer {
   private handleShot(player: ServerPlayer, data: unknown): void {
     if (player.deadUntil > Date.now()) return;
     const shot = data as Partial<ShotCommand>;
+    if (!Number.isInteger(shot.sequence) || shot.sequence <= player.lastShotSequence) return;
     if (!this.isWeaponId(shot.weaponId)) return;
     if (player.weaponId !== shot.weaponId) return;
     if (!Number.isFinite(shot.aimYaw) || !Number.isFinite(shot.aimPitch)) return;
@@ -280,6 +283,7 @@ export class GameServer {
       : now;
 
     player.lastShotAt = now;
+    player.lastShotSequence = shot.sequence!;
     player.ammoInMag[weapon.id]--;
 
     const baseDirection = this.directionFromAim(shot.aimYaw!, shot.aimPitch!);
@@ -570,6 +574,11 @@ export class GameServer {
       const dz = target.position[2] - p.position[2];
       const distance = Math.hypot(dx, dy, dz);
       if (distance > radius) continue;
+      if (distance > 0.05) {
+        const dir: [number, number, number] = [dx / distance, dy / distance, dz / distance];
+        const wall = this.physics.raycast(p.position, dir, distance);
+        if (wall) continue;
+      }
       const falloff = 1 - distance / radius;
       if (falloff <= 0) continue;
       target.apply(110 * falloff);
