@@ -140,6 +140,11 @@ export class NetworkManager {
       case 'combat':
         eventBus.emit('net:combat', msg.data);
         break;
+      case 'kill': {
+        const k = msg.data as { killer: string; victim: string; weapon: string; headshot: boolean };
+        eventBus.emit('net:killfeed', k);
+        break;
+      }
       case 'player_join':
         eventBus.emit('net:player_join', msg.data);
         break;
