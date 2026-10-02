@@ -56,7 +56,8 @@ export class PhysicsEngine {
     direction: THREE.Vector3,
     maxDistance: number = 200,
     membershipMask: number = 0xffff,
-    filterMask: number = CollisionGroup.STATIC_GEOMETRY | CollisionGroup.HITBOX
+    filterMask: number = CollisionGroup.STATIC_GEOMETRY | CollisionGroup.HITBOX,
+    excludeRigidBody?: RAPIER.RigidBody
   ): RaycastResult {
     if (!this.isReady) {
       return { hit: false, point: new THREE.Vector3(), normal: new THREE.Vector3(0, 1, 0), distance: maxDistance };
@@ -68,15 +69,17 @@ export class PhysicsEngine {
       { x: dirNorm.x, y: dirNorm.y, z: dirNorm.z }
     );
 
-    // Encode interaction groups (upper 16 bits filter, lower 16 bits membership)
-    const interactionGroups = (filterMask << 16) | membershipMask;
+    // Rapier packs memberships in the upper 16 bits and filters in the lower 16 bits.
+    const interactionGroups = (membershipMask << 16) | filterMask;
 
     const hit = this.world.castRayAndGetNormal(
       ray,
       maxDistance,
       true, // solid hit
       undefined,
-      interactionGroups
+      interactionGroups,
+      undefined,
+      excludeRigidBody
     );
 
     if (hit) {
