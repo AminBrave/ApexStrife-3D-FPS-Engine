@@ -625,7 +625,7 @@ export class WeaponManager {
       direction,
       300,
       0xffff,
-      CollisionGroup.STATIC_GEOMETRY | CollisionGroup.HITBOX | CollisionGroup.PLAYER_CAPSULE
+      CollisionGroup.STATIC_GEOMETRY | CollisionGroup.HITBOX
     );
 
     const hitPoint = rayResult.point;
