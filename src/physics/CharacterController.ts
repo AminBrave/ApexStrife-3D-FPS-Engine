@@ -173,7 +173,7 @@ export class CharacterController {
       this.position.add(movement);
 
       // Simple ground plane check at y = 1.0
-      const groundFloor = 1.0;
+      const groundFloor = ARENA_SPAWNS[0][1];
       if (this.position.y <= groundFloor) {
         this.position.y = groundFloor;
         this.velocity.y = 0;
@@ -186,8 +186,8 @@ export class CharacterController {
       }
 
       // World boundary constraints: Arena bounds [-45, 45] x [-45, 45]
-      this.position.x = THREE.MathUtils.clamp(this.position.x, -45, 45);
-      this.position.z = THREE.MathUtils.clamp(this.position.z, -45, 45);
+      this.position.x = THREE.MathUtils.clamp(this.position.x, -44, 44);
+      this.position.z = THREE.MathUtils.clamp(this.position.z, -44, 44);
     }
   }
 
@@ -223,6 +223,8 @@ export class CharacterController {
 
   public setPosition(pos: THREE.Vector3): void {
     this.position.copy(pos);
+    this.coyoteTimer = 0;
+    this.jumpCooldown = 0;
     if (this.body) {
       this.body.setTranslation({ x: pos.x, y: pos.y, z: pos.z }, true);
       this.body.setNextKinematicTranslation({ x: pos.x, y: pos.y, z: pos.z });
