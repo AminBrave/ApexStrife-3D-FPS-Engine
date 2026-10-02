@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { PhysicsEngine } from './PhysicsEngine';
 import { eventBus } from '../core/EventBus';
+import { stepHorizontalVelocity } from '../gameplay/MovementSimulation';
 
 export interface MovementInput {
   moveForward: number; // -1 to +1
@@ -93,61 +94,18 @@ export class CharacterController {
     // 2. Sprint state (cannot sprint while crouching or moving backwards)
     this.isSprinting = input.sprint && !this.isCrouching && input.moveForward > 0;
 
-    // 3. Desired target speed
-    let targetSpeed = this.walkSpeed;
-    if (this.isCrouching) {
-      targetSpeed = this.crouchSpeed;
-    } else if (this.isSprinting) {
-      targetSpeed = this.sprintSpeed;
+    // 3-5. Shared deterministic horizontal movement solver.
+    const movementState = {
+      velocity: [this.velocity.x, this.velocity.y, this.velocity.z] as [number, number, number],
+      isGrounded: this.isGrounded,
+    };
+    stepHorizontalVelocity(movementState, input, fixedDeltaTime);
+    this.velocity.x = movementState.velocity[0];
+    this.velocity.z = movementState.velocity[2];
+
+    if (this.isGrounded && this.velocity.y < 0) {
+      this.velocity.y = -0.5;
     }
-
-    // 4. Direction assembly relative to camera yaw
-    const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), input.yaw);
-    const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), input.yaw);
-
-    const wishDir = new THREE.Vector3()
-      .addScaledVector(forward, input.moveForward)
-      .addScaledVector(right, input.moveRight);
-
-    if (wishDir.lengthSq() > 0.0001) {
-      wishDir.normalize();
-    }
-
-    // 5. Ground Check & Friction
-    if (this.isGrounded) {
-      this.coyoteTimer = this.coyoteTimeLimit;
-
-      // Apply ground friction to horizontal velocity
-      const horizVel = new THREE.Vector3(this.velocity.x, 0, this.velocity.z);
-      const speed = horizVel.length();
-      if (speed > 0.001) {
-        const drop = speed * this.groundFriction * fixedDeltaTime;
-        const newSpeed = Math.max(speed - drop, 0);
-        horizVel.multiplyScalar(newSpeed / speed);
-        this.velocity.x = horizVel.x;
-        this.velocity.z = horizVel.z;
-      }
-
-      // Ground Acceleration
-      this.accelerate(wishDir, targetSpeed, this.groundAcceleration, fixedDeltaTime);
-
-      // Snap vertical velocity down slightly to glue to slopes
-      if (this.velocity.y < 0) {
-        this.velocity.y = -0.5;
-      }
-    } else {
-      // Air acceleration (reduced steerability)
-      this.coyoteTimer = Math.max(0, this.coyoteTimer - fixedDeltaTime);
-      this.accelerate(wishDir, targetSpeed, this.airAcceleration, fixedDeltaTime);
-
-      // Apply gravity
-      this.velocity.y += this.gravity * fixedDeltaTime;
-      // Terminal velocity clamp
-      if (this.velocity.y < -45.0) {
-        this.velocity.y = -45.0;
-      }
-    }
-
     // 6. Jumping
     if (this.jumpCooldown > 0) {
       this.jumpCooldown -= fixedDeltaTime;
