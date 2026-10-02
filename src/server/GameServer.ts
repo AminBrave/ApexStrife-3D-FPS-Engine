@@ -73,6 +73,9 @@ const MAX_INPUT_QUEUE = 8;
 const MAX_SHOT_REWIND_MS = 250;
 const MAX_SHOT_DISTANCE = 300;
 const PLAYER_EYE_HEIGHT = 1.65;
+const PLAYER_HEIGHT = 1.8;
+const SAFE_SPAWN_Y = PLAYER_HEIGHT / 2 + 0.12;
+const WORLD_RECOVERY_Y = -8;
 const BODY_CENTER_HEIGHT = 0.9;
 const HEAD_HEIGHT = 1.35;
 const HEAD_RADIUS = 0.23;
@@ -432,8 +435,17 @@ export class GameServer {
       z: s.velocity[2] * DT,
     };
     const moved = this.physics.moveCharacter(player.id, movement as any);
-    s.position = [moved.position.x, moved.position.y, moved.position.z];
-    s.isGrounded = moved.grounded;
+
+    if (moved.position.y < WORLD_RECOVERY_Y) {
+      const recovery = this.getSpawnPosition();
+      this.physics.setCharacterPosition(player.id, recovery);
+      s.position = recovery;
+      s.velocity = [0, 0, 0];
+      s.isGrounded = true;
+    } else {
+      s.position = [moved.position.x, moved.position.y, moved.position.z];
+      s.isGrounded = moved.grounded;
+    }
     if (s.isGrounded && s.velocity[1] < 0) s.velocity[1] = 0;
   }
 
@@ -597,7 +609,7 @@ export class GameServer {
 
   private getSpawnPosition(): [number, number, number] {
     const n = this.players.size % 6;
-    const spawns: [number, number, number][] = [[0,0.9,8],[8,0.9,8],[-8,0.9,8],[0,0.9,-2],[12,4.9,-25],[-12,0.9,-2]];
+    const spawns: [number,number,number][] = [[0,SAFE_SPAWN_Y,8],[8,SAFE_SPAWN_Y,8],[-8,SAFE_SPAWN_Y,8],[0,SAFE_SPAWN_Y,-2],[12,4.9,-25],[-12,SAFE_SPAWN_Y,-2]];
     return spawns[n];
   }
 
