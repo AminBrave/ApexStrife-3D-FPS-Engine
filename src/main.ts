@@ -115,6 +115,8 @@ export async function bootstrapGame(canvas: HTMLCanvasElement): Promise<GameInst
 
     playerController.health = snapshot.health;
     playerController.maxHealth = snapshot.maxHealth;
+    playerController.shield = snapshot.shield;
+    playerController.maxShield = snapshot.maxShield;
     weaponManager.ammoInMag = [
       snapshot.ammoInMag.ar,
       snapshot.ammoInMag.shotgun,
