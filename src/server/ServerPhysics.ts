@@ -28,7 +28,7 @@ export class ServerPhysics {
     );
     const collider = this.world.createCollider(
       this.rapier.ColliderDesc.capsule(0.55, 0.35)
-        .setCollisionGroups((CollisionGroup.PLAYER_CAPSULE << 16) | CollisionGroup.STATIC_GEOMETRY),
+        .setCollisionGroups((CollisionGroup.PLAYER_CAPSULE << 16) | (CollisionGroup.STATIC_GEOMETRY | CollisionGroup.PLAYER_CAPSULE)),
       body
     );
     const controller = this.world.createCharacterController(0.015);
