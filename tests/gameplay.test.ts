@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { stepHorizontalVelocity } from '../src/gameplay/MovementSimulation';
+import { ARENA_BOXES, ARENA_SPAWNS, ARENA_FLOOR_TOP } from '../src/world/ArenaDefinition';
 
 function state(grounded = true) {
   return { velocity: [0, 0, 0] as [number, number, number], isGrounded: grounded };
@@ -22,6 +23,13 @@ function state(grounded = true) {
   const s = state();
   stepHorizontalVelocity(s, { moveForward: 1, moveRight: 0, sprint: true, crouch: false, yaw: 0 }, 1 / 60);
   assert(Math.hypot(s.velocity[0], s.velocity[2]) <= 11.5 + 1e-9, 'sprint must respect the configured speed cap');
+}
+
+assert.equal(ARENA_BOXES[0].type, 'ground');
+assert.equal(ARENA_BOXES[0].position[1] + ARENA_BOXES[0].halfExtents[1], ARENA_FLOOR_TOP, 'arena floor top must be y=0');
+for (const spawn of ARENA_SPAWNS) {
+  assert(spawn[1] > ARENA_FLOOR_TOP, 'every spawn must place the capsule above the floor');
+  assert(Math.abs(spawn[0]) < 44 && Math.abs(spawn[2]) < 44, 'every spawn must be inside the perimeter');
 }
 
 console.log('gameplay tests passed');
