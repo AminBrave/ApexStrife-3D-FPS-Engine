@@ -182,6 +182,8 @@ export class NetworkManager {
       authoritativeState: localState,
       health: 100,
       maxHealth: 100,
+      shield: 50,
+      maxShield: 50,
       weaponId: 'ar',
       ammoInMag: { ar: 30, shotgun: 8, sniper: 5, plasma: 4 },
       ammoInReserve: { ar: 180, shotgun: 48, sniper: 25, plasma: 16 },
