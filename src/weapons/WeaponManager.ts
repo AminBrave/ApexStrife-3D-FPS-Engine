@@ -639,12 +639,7 @@ export class WeaponManager {
       const isHeadshot = userData?.part === 'head';
       const damage = weapon.damage * (isHeadshot ? weapon.headshotMultiplier : 1.0);
 
-      soundSynth.playHitmark(isHeadshot);
-
-      eventBus.emit('weapon:hit', {
-        targetId: userData?.id || 'target_entity',
-        damage,
-        isHeadshot,
+      eventBus.emit('weapon:impact', {
         point: [hitPoint.x, hitPoint.y, hitPoint.z],
         normal: [rayResult.normal.x, rayResult.normal.y, rayResult.normal.z],
       });
@@ -703,10 +698,7 @@ export class WeaponManager {
     eventBus.emit('camera:shake', { intensity: 0.45, decay: 3.5 });
     this.createImpactSparks(center, new THREE.Vector3(0, 1, 0), 40, 0x00ff88);
 
-    eventBus.emit('weapon:hit', {
-      targetId: 'splash_area',
-      damage,
-      isHeadshot: false,
+    eventBus.emit('weapon:impact', {
       point: [center.x, center.y, center.z],
       normal: [0, 1, 0],
     });
