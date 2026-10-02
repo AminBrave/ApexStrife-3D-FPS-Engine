@@ -601,14 +601,20 @@ export class GameServer {
           this.botFire(bot, target, now);
         }
       } else {
-        const waypoint = waypoints[bot.waypoint % waypoints.length];
-        const dx = waypoint[0] - bot.position[0];
+        if (waypoints.length === 0) {
+          desired = [0, 0, 0];
+          bot.isFiring = false;
+        } else {
+          bot.waypoint = ((Number.isFinite(bot.waypoint) ? Math.trunc(bot.waypoint) : 0) % waypoints.length + waypoints.length) % waypoints.length;
+          const waypoint = waypoints[bot.waypoint];
+          const dx = waypoint[0] - bot.position[0];
         const dz = waypoint[2] - bot.position[2];
         if (Math.hypot(dx, dz) < 2) bot.waypoint = (bot.waypoint + 1) % waypoints.length;
         const length = Math.max(0.001, Math.hypot(dx, dz));
         desired = [dx / length, 0, dz / length];
         bot.yaw = Math.atan2(desired[0], -desired[2]);
-        bot.isFiring = false;
+          bot.isFiring = false;
+        }
       }
 
       const length = Math.hypot(desired[0], desired[2]);
